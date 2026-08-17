@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.env
+*.log
+.DS_Store
+coverage/
+server/uploads/
+sample_employee_accounts.txt
+paytimepro_backup_*.sql
