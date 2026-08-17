@@ -36,10 +36,18 @@ app.use(session({
 
 app.get('/api/health', async (_request, response) => {
   try {
-    await pool.query('SELECT 1');
-    response.json({ status: 'ok', database: 'connected' });
+    const result = await pool.query(`SELECT
+      to_regclass('public.users') IS NOT NULL AS users,
+      to_regclass('public.roles') IS NOT NULL AS roles,
+      to_regclass('public.modules') IS NOT NULL AS modules`);
+    const schemaReady = Object.values(result.rows[0]).every(Boolean);
+    response.status(schemaReady ? 200 : 503).json({
+      status: schemaReady ? 'ok' : 'degraded',
+      database: 'connected',
+      schema: schemaReady ? 'ready' : 'missing'
+    });
   } catch {
-    response.status(503).json({ status: 'degraded', database: 'disconnected' });
+    response.status(503).json({ status: 'degraded', database: 'disconnected', schema: 'unknown' });
   }
 });
 
