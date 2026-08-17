@@ -37,7 +37,8 @@ function Login() {
           remember: form.get('remember') === 'on'
         })
       });
-      const data = await response.json();
+      const contentType = response.headers.get('content-type') || '';
+      const data = contentType.includes('application/json') ? await response.json() : {};
       if (!response.ok) throw new Error(data.error || 'Unable to sign in.');
       window.location.assign('/dashboard');
     } catch (loginError) {

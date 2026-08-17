@@ -12,7 +12,7 @@ import { workforceRouter } from './routes/workforce.js';
 import { departmentsRouter } from './routes/departments.js';
 import { timeTrackingRouter } from './routes/time-tracking.js';
 
-const app = express();
+export const app = express();
 const PgSession = connectPgSimple(session);
 const sessionCookieName = 'paytimepro.sid';
 
@@ -101,16 +101,20 @@ app.use((error, _request, response, _next) => {
   response.status(500).json({ error: 'Internal server error' });
 });
 
-const server = app.listen(config.port, () => {
-  console.log(`API listening on http://localhost:${config.port}`);
-});
-
-async function shutdown() {
-  server.close(async () => {
-    await pool.end();
-    process.exit(0);
+if (!process.env.VERCEL) {
+  const server = app.listen(config.port, () => {
+    console.log(`API listening on http://localhost:${config.port}`);
   });
+
+  async function shutdown() {
+    server.close(async () => {
+      await pool.end();
+      process.exit(0);
+    });
+  }
+
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
 }
 
-process.on('SIGINT', shutdown);
-process.on('SIGTERM', shutdown);
+export default app;
