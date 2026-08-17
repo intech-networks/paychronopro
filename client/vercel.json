@@ -4,7 +4,11 @@
   "outputDirectory": "dist",
   "rewrites": [
     {
-      "source": "/(.*)",
+      "source": "/dashboard",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/logout",
       "destination": "/index.html"
     }
   ]
