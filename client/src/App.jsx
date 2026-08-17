@@ -67,7 +67,6 @@ function Login() {
           </form>
           <p className="support">Need access? <a href="mailto:hello@paytimepro.com">Contact your administrator</a></p>
         </section>
-        <aside className="login-art" aria-hidden="true"><div className="shape shape-light" /><div className="shape shape-copper" /><div className="glass" /><div className="art-quote"><span>Time, beautifully managed.</span><small>PAYTIMEPRO</small></div></aside>
       </main>
       <footer><span>© 2026 PayTimePro</span><span>Secure workforce access</span></footer>
     </div>
