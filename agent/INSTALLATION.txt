@@ -1,0 +1,257 @@
+PayTimePro Sync Agent
+Installation, Uninstallation, and Troubleshooting Guide
+========================================================
+
+PURPOSE
+-------
+The PayTimePro Sync Agent runs on a Windows computer connected to the same
+local network as the ZKTeco MB460. It reads users and attendance records from
+the device and sends them to the cloud-hosted PayTimePro application over
+HTTPS. Port 4370 does not need to be exposed to the internet.
+
+
+PREREQUISITES
+-------------
+1. A Windows computer that remains powered on during synchronization.
+2. Node.js installed and available from PowerShell:
+
+   node.exe --version
+   npm.cmd --version
+
+3. Network access from the Windows computer to the MB460 on port 4370.
+4. HTTPS access from the Windows computer to the deployed PayTimePro site.
+5. Administrator access on the Windows computer.
+6. The PayTimePro database migrations must be applied:
+
+   npm.cmd run db:migrate
+
+
+CLOUD CONFIGURATION
+-------------------
+Configure these environment variables on the cloud host before installing the
+agent:
+
+   SYNC_AGENT_ID=office-main
+   SYNC_AGENT_SECRET=<a-long-random-secret>
+
+The Agent ID and secret entered during installation must exactly match these
+cloud values. Environment-variable changes normally require a cloud redeploy or
+application restart.
+
+Never commit the real secret to Git. Do not reuse SESSION_SECRET as the agent
+secret.
+
+
+INSTALLATION
+------------
+1. Copy or clone the PayTimePro repository onto the on-site Windows computer.
+
+2. Open PowerShell as Administrator.
+
+3. Go to the repository directory. Example:
+
+   Set-Location "C:\Projects\paytimepro"
+
+4. Allow the installer for this PowerShell session only:
+
+   Set-ExecutionPolicy -Scope Process Bypass
+
+5. Run the installer:
+
+   .\agent\install-agent.ps1
+
+6. Enter the requested values:
+
+   PayTimePro cloud URL:
+     Use the public HTTPS origin without /dashboard.
+     Example: https://paytimepro.example.com
+
+   Agent ID:
+     Must match SYNC_AGENT_ID. The recommended value is office-main.
+
+   Agent secret:
+     Must exactly match SYNC_AGENT_SECRET.
+
+The installer performs the following actions:
+
+* Copies the agent to C:\ProgramData\PayTimePro Sync Agent
+* Installs locked production dependencies using npm.cmd ci
+* Creates the private agent .env file
+* Registers a Windows startup task named PayTimePro Sync Agent
+* Runs the task under the Windows SYSTEM account
+* Starts the agent immediately
+
+
+VERIFYING THE INSTALLATION
+--------------------------
+Check the scheduled task from an Administrator PowerShell window:
+
+   Get-ScheduledTask -TaskName "PayTimePro Sync Agent"
+   Get-ScheduledTaskInfo -TaskName "PayTimePro Sync Agent"
+
+The task state should normally be Running. LastTaskResult 267009 (0x41301)
+means the long-running task is active.
+
+Open PayTimePro and go to Utilities > Sync Agent. The agent should show Online
+within approximately 15 seconds. The page considers an agent online when it has
+contacted the cloud within the last 60 seconds.
+
+Use Sync now to create a synchronization job. The agent should claim the job,
+read the MB460, upload the backup, and show the latest user and attendance
+counts on the Sync Agent page.
+
+Add devices from Utilities > Sync Agent by entering a display name, IPv4
+address, and port. The on-site agent probes every registered device during each
+polling cycle and reports its online or offline status to the cloud application.
+
+
+UNINSTALLATION
+--------------
+1. Open PowerShell as Administrator.
+
+2. Go to the repository directory.
+
+3. Run:
+
+   Set-ExecutionPolicy -Scope Process Bypass
+   .\agent\uninstall-agent.ps1
+
+The uninstaller stops and removes the scheduled task. It intentionally leaves
+the installed files and .env under C:\ProgramData\PayTimePro Sync Agent so the
+configuration remains recoverable.
+
+After confirming the agent is no longer needed, an administrator may manually
+remove that folder. Be aware that its .env contains the agent secret. Rotate or
+remove SYNC_AGENT_SECRET from the cloud host if the computer is retired, lost,
+or compromised.
+
+
+UPGRADING OR REINSTALLING
+-------------------------
+Pull the latest repository changes and run install-agent.ps1 again as
+Administrator. The installer replaces the application files, restores locked
+dependencies, updates the configuration, replaces the scheduled task, and
+starts it.
+
+
+TROUBLESHOOTING
+---------------
+
+Sync Agent says Offline, but the process appears to be running
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Confirm that the installed Agent ID exactly matches the cloud value:
+
+   Get-Content "C:\ProgramData\PayTimePro Sync Agent\.env"
+
+The following values must agree:
+
+   Agent: AGENT_ID=office-main
+   Cloud: SYNC_AGENT_ID=office-main
+
+Also confirm AGENT_SECRET exactly matches SYNC_AGENT_SECRET and that the cloud
+application was restarted or redeployed after setting its environment values.
+
+
+Scheduled task is missing
+~~~~~~~~~~~~~~~~~~~~~~~~~
+Run the installer again from an Administrator PowerShell window:
+
+   Set-ExecutionPolicy -Scope Process Bypass
+   .\agent\install-agent.ps1
+
+Do not run the installer from a non-administrator terminal.
+
+
+Run the agent interactively to see errors
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Stop the scheduled task first to prevent two agents from running:
+
+   Stop-ScheduledTask -TaskName "PayTimePro Sync Agent"
+   Set-Location "C:\ProgramData\PayTimePro Sync Agent"
+   node.exe src/index.js
+
+A successful launch displays:
+
+   PayTimePro Sync Agent office-main started
+
+Press Ctrl+C when finished, then restart the scheduled task:
+
+   Start-ScheduledTask -TaskName "PayTimePro Sync Agent"
+
+
+Invalid agent credentials or HTTP 401
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+The Agent ID may be missing, or AGENT_SECRET does not match the cloud
+SYNC_AGENT_SECRET. Correct the installed .env as Administrator, redeploy the
+cloud application if its environment changed, and restart the agent.
+
+
+HTTP 404 from the cloud API
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Verify PAYTIMEPRO_API_URL points to the deployed PayTimePro application and not
+to a dashboard path or unrelated site. It should resemble:
+
+   PAYTIMEPRO_API_URL=https://paytimepro.example.com
+
+Confirm the deployed version contains the Sync Agent API routes.
+
+
+HTTP 500 or database errors
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Apply the PayTimePro database migrations against the cloud database:
+
+   npm.cmd run db:migrate
+
+Confirm DATABASE_URL and database network access are configured on the cloud
+host.
+
+
+The agent is Online, but synchronization fails
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Test the MB460 network connection from the agent computer:
+
+   Test-NetConnection 192.168.1.11 -Port 4370
+
+A successful ping does not prove that the ZKTeco service is available. Ping
+uses ICMP, while the device integration uses the ZKTeco protocol on TCP or UDP
+port 4370. The agent performs a real protocol connection and automatically
+attempts the library's supported TCP/UDP fallback.
+
+If the device uses a different address, update its IP address from Utilities >
+Sync Agent in the PayTimePro site. Device addresses are not stored in the
+installed agent configuration. Also confirm the computer and MB460 are on the
+same LAN or have a valid routed/VPN connection. Check Windows Firewall, VLAN
+rules, Wi-Fi client isolation, and whether another application has an exclusive
+connection to the device.
+
+
+Synchronization remains Pending
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+The cloud accepted the job, but no agent claimed it. Check that the Sync Agent
+shows Online, the Agent IDs match, and the agent can reach the cloud URL. Run
+the agent interactively to see its current error.
+
+
+Synchronization remains Running
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+The agent claimed the job but did not finish. This can happen if the process or
+computer stopped during a device read. Restart the agent and inspect its
+interactive output. A database administrator may need to mark a stale running
+job as failed before requesting another synchronization.
+
+
+Duplicate agents or unexpected behavior
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Do not run the scheduled task and an interactive agent at the same time. Stop
+one instance before starting the other. Each physical location should use a
+unique Agent ID when multiple MB460 devices or sites are added.
+
+
+SECURITY NOTES
+--------------
+* Never expose MB460 port 4370 through router port forwarding.
+* Never commit agent/.env or the installed ProgramData .env to Git.
+* Use HTTPS for PAYTIMEPRO_API_URL.
+* Rotate the agent secret if it is disclosed.
+* Device user passwords are intentionally excluded from uploaded backups.
+* Limit Administrator access to the on-site agent computer.

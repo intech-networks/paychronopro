@@ -78,6 +78,7 @@ function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [activeModule, setActiveModule] = useState('overview');
   const [maintenanceOpen, setMaintenanceOpen] = useState(true);
+  const [utilitiesOpen, setUtilitiesOpen] = useState(true);
 
   useEffect(() => {
     fetch('/api/auth/me')
@@ -89,9 +90,12 @@ function Dashboard() {
         setUser(data.user);
         const visibleModules = data.user.permissions.filter((permission) => permission.view).map((permission) => permission.moduleKey);
         const maintenanceVisible = ['workforce', 'departments', 'roles'].some((moduleKey) => visibleModules.includes(moduleKey));
+        const utilitiesVisible = visibleModules.includes('scheduler');
         let savedModule = '';
         try { savedModule = window.localStorage.getItem('paytimepro.activeModule') || ''; } catch {}
-        const savedModuleAllowed = visibleModules.includes(savedModule) || (savedModule === 'maintenance' && maintenanceVisible);
+        const savedModuleAllowed = visibleModules.includes(savedModule)
+          || (savedModule === 'maintenance' && maintenanceVisible)
+          || (savedModule === 'utilities' && utilitiesVisible);
         const fallbackModule = visibleModules.includes('overview') ? 'overview' : visibleModules[0] || 'overview';
         setActiveModule(savedModuleAllowed ? savedModule : fallbackModule);
         setLoading(false);
@@ -112,6 +116,9 @@ function Dashboard() {
     ['departments', '▦', 'Departments'],
     ['roles', '▦', 'Roles & Access']
   ].filter(([moduleKey]) => canView(moduleKey));
+  const utilityItems = [
+    ['scheduler', '▦', 'Sync Agent']
+  ].filter(([moduleKey]) => canView(moduleKey));
   const navItems = [
     ['overview', '⌂', 'Overview'],
     ['time_tracking', '◷', 'Time Tracking'],
@@ -129,6 +136,10 @@ function Dashboard() {
             <button className={activeModule === 'maintenance' || maintenanceItems.some(([moduleKey]) => moduleKey === activeModule) ? 'active group-active' : ''} type="button" onClick={() => { setMaintenanceOpen((current) => !current); setActiveModule('maintenance'); }} aria-expanded={maintenanceOpen}><span>⚙</span>Maintenance<b>{maintenanceOpen ? '⌃' : '⌄'}</b></button>
             {maintenanceOpen && <div className="sidebar-subnav">{maintenanceItems.map(([moduleKey, icon, label]) => <button className={activeModule === moduleKey ? 'active' : ''} type="button" key={moduleKey} onClick={() => setActiveModule(moduleKey)}><span>{icon}</span>{label}</button>)}</div>}
           </div>}
+          {utilityItems.length > 0 && <div className="sidebar-nav-group">
+            <button className={activeModule === 'utilities' || utilityItems.some(([moduleKey]) => moduleKey === activeModule) ? 'active group-active' : ''} type="button" onClick={() => { setUtilitiesOpen((current) => !current); setActiveModule('utilities'); }} aria-expanded={utilitiesOpen}><span>⌘</span>Utilities<b>{utilitiesOpen ? '⌃' : '⌄'}</b></button>
+            {utilitiesOpen && <div className="sidebar-subnav">{utilityItems.map(([moduleKey, icon, label]) => <button className={activeModule === moduleKey ? 'active' : ''} type="button" key={moduleKey} onClick={() => setActiveModule(moduleKey)}><span>{icon}</span>{label}</button>)}</div>}
+          </div>}
           {navItems.slice(1).map(([moduleKey, icon, label]) => <button className={activeModule === moduleKey ? 'active' : ''} type="button" key={moduleKey} onClick={() => setActiveModule(moduleKey)}><span>{icon}</span>{label}</button>)}
         </nav>
       </aside>
@@ -143,10 +154,12 @@ function Dashboard() {
         <main className="dashboard-main" id={activeModule} aria-label={`${activeModule} module`}>
           {activeModule === 'overview' && <Overview user={user} onNavigate={setActiveModule} />}
           {activeModule === 'maintenance' && <Maintenance user={user} onNavigate={setActiveModule} />}
+          {activeModule === 'utilities' && <Utilities user={user} onNavigate={setActiveModule} />}
           {activeModule === 'roles' && <RoleAccess user={user} />}
           {activeModule === 'workforce' && <Workforce user={user} />}
           {activeModule === 'departments' && <Departments user={user} />}
           {activeModule === 'time_tracking' && <TimeTracking />}
+          {activeModule === 'scheduler' && <Scheduler user={user} />}
           {['payroll', 'reports'].includes(activeModule) && <ModulePlaceholder moduleKey={activeModule} />}
         </main>
       </div>
@@ -164,11 +177,96 @@ function Maintenance({ user, onNavigate }) {
   return <section className="overview-view"><div className="module-title"><div><span>Administration</span><h1>Maintenance</h1><p>Manage workforce records, departments, and access controls.</p></div></div><div className="module-grid">{maintenanceModules.map((permission) => <button type="button" key={permission.moduleKey} onClick={() => onNavigate(permission.moduleKey)}><strong>{permission.moduleName}</strong><span>Open submodule →</span></button>)}</div></section>;
 }
 
+function Utilities({ user, onNavigate }) {
+  const utilityModules = user.permissions.filter((permission) => permission.moduleKey === 'scheduler' && permission.view);
+  return <section className="overview-view"><div className="module-title"><div><span>Tools</span><h1>Utilities</h1><p>Access scheduling and other workforce utilities.</p></div></div><div className="module-grid">{utilityModules.map((permission) => <button type="button" key={permission.moduleKey} onClick={() => onNavigate(permission.moduleKey)}><strong>{permission.moduleName}</strong><span>Open utility →</span></button>)}</div></section>;
+}
+
 const moduleCopy = {
   time_tracking: ['Time Tracking', 'Clock-ins and timesheets are ready for the next implementation phase.'],
   payroll: ['Payroll', 'Payroll periods, calculations, and exports are ready for the next implementation phase.'],
   reports: ['Reports', 'Workforce and payroll reporting is ready for the next implementation phase.']
 };
+
+function Scheduler({ user }) {
+  const [syncingDeviceId, setSyncingDeviceId] = useState(null);
+  const [status, setStatus] = useState({ agent: null, jobs: [], backups: [], devices: [] });
+  const [deviceForm, setDeviceForm] = useState({ name: '', ip: '', port: '4370' });
+  const [showDeviceForm, setShowDeviceForm] = useState(false);
+  const [editingDeviceId, setEditingDeviceId] = useState(null);
+  const [refreshingDeviceId, setRefreshingDeviceId] = useState(null);
+  const [error, setError] = useState('');
+  const permission = user.permissions.find((item) => item.moduleKey === 'scheduler');
+
+  async function loadStatus() {
+    const response = await fetch('/api/scheduler/status', { cache: 'no-store' });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Unable to load synchronization status.');
+    setStatus({ ...data, agent: data.agent ? { ...data.agent, lastError: '' } : null });
+  }
+
+  useEffect(() => {
+    loadStatus().catch((loadError) => setError(loadError.message));
+    const timer = window.setInterval(() => loadStatus().catch(() => {}), 5000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  async function requestSync(deviceId) {
+    const device = status.devices.find((item) => String(item.id) === String(deviceId));
+    if (device?.status !== 'online') {
+      setError('Wait for the device to show Online before synchronizing.');
+      return;
+    }
+    setSyncingDeviceId(deviceId);
+    setError('');
+    try {
+      const response = await fetch(`/api/scheduler/devices/${deviceId}/sync`, { method: 'POST' });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Unable to request synchronization.');
+      await loadStatus();
+    } catch (pullError) {
+      setError(pullError.message);
+    } finally {
+      setSyncingDeviceId(null);
+    }
+  }
+
+  async function addDevice(event) {
+    event.preventDefault(); setError('');
+    try { const response=await fetch(editingDeviceId?`/api/scheduler/devices/${editingDeviceId}`:'/api/scheduler/devices',{method:editingDeviceId?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(deviceForm)}); const data=await response.json(); if(!response.ok)throw new Error(data.error||'Unable to save device.'); setDeviceForm({name:'',ip:'',port:'4370'}); setEditingDeviceId(null); setShowDeviceForm(false); await loadStatus(); }
+    catch(addError){setError(addError.message);}
+  }
+
+  function editDevice(device) {
+    setDeviceForm({name:device.name,ip:device.ip,port:String(device.port)}); setEditingDeviceId(device.id); setShowDeviceForm(true); setError('');
+  }
+
+  function closeDeviceForm() {
+    setShowDeviceForm(false); setEditingDeviceId(null); setDeviceForm({name:'',ip:'',port:'4370'});
+  }
+
+  async function removeDevice(device) {
+    if(!window.confirm(`Remove ${device.name}? Its device association and job history will be removed.`))return;
+    setError(''); try{const response=await fetch(`/api/scheduler/devices/${device.id}`,{method:'DELETE'}); if(!response.ok){const data=await response.json();throw new Error(data.error||'Unable to remove device.');}await loadStatus();}catch(removeError){setError(removeError.message);}
+  }
+
+  async function refreshDevice(deviceId) {
+    setRefreshingDeviceId(deviceId); setError('');
+    try { const response=await fetch(`/api/scheduler/devices/${deviceId}/refresh`,{method:'POST'}); const data=await response.json(); if(!response.ok)throw new Error(data.error||'Unable to refresh device status.'); await loadStatus(); }
+    catch(refreshError){setError(refreshError.message);} finally {setRefreshingDeviceId(null);}
+  }
+
+  const online = status.agent?.lastSeenAt && Date.now() - new Date(status.agent.lastSeenAt).getTime() < 60000;
+  return <section className="overview-view"><div className="module-title"><div><span>Utilities</span><h1>Sync Agent</h1><p>Synchronize users and attendance records through the on-site MB460 agent.</p></div></div><div className="module-placeholder scheduler-pull"><strong>Sync agent · {online ? 'Online' : 'Offline'}</strong><p>{status.agent?.lastSeenAt ? `Last contact: ${new Date(status.agent.lastSeenAt).toLocaleString()}` : 'The sync agent has not connected yet.'}</p>{error && <p className="form-error" role="alert">{error}</p>}{status.agent?.lastError && <p className="form-error" role="alert">{status.agent.lastError}</p>}</div><section className="device-registry"><div className="section-heading"><div><span>Local network</span><h3>Available devices</h3></div>{permission?.create&&<button type="button" onClick={()=>showDeviceForm?closeDeviceForm():setShowDeviceForm(true)}>{showDeviceForm?'Cancel':'Add device'}</button>}</div>{showDeviceForm&&<form className="device-add-form" onSubmit={addDevice}><label><span>Device name</span><input value={deviceForm.name} onChange={(event)=>setDeviceForm({...deviceForm,name:event.target.value})} placeholder="Main office MB460" required /></label><label><span>IP address</span><input value={deviceForm.ip} onChange={(event)=>setDeviceForm({...deviceForm,ip:event.target.value})} placeholder="192.168.1.11" required /></label><label><span>Port</span><input type="number" min="1" max="65535" value={deviceForm.port} onChange={(event)=>setDeviceForm({...deviceForm,port:event.target.value})} required /></label><button className="primary-action" type="submit">{editingDeviceId?'Save device':'Add device'}</button></form>}<div className="device-list">{status.devices.map((device)=>{const deviceJobs=status.jobs.filter((item)=>String(item.deviceId)===String(device.id));const job=deviceJobs.find((item)=>['pending','running'].includes(item.status));const backup=status.backups.find((item)=>String(item.deviceId)===String(device.id));return <article key={device.id}><i className={`device-dot ${device.status}`} /><div><strong>{device.name}</strong><small>{device.ip}:{device.port}</small></div><span className={`device-status ${device.status}`}>{device.status}</span><time>{device.lastCheckedAt?`Checked ${new Date(device.lastCheckedAt).toLocaleString()}`:device.status==='unknown'?'Checking connectivity…':'Not checked yet'}</time><div className="device-actions">{permission?.update&&<button className="device-sync-button" type="button" onClick={()=>requestSync(device.id)} disabled={!online||Boolean(job)||syncingDeviceId===device.id}>{job?`Sync ${job.status}…`:syncingDeviceId===device.id?'Requesting…':'Sync'}</button>}{permission?.update&&<button type="button" onClick={()=>refreshDevice(device.id)} disabled={!online||device.status==='unknown'||refreshingDeviceId===device.id}>{device.status==='unknown'||refreshingDeviceId===device.id?'Checking…':'Refresh'}</button>}{permission?.update&&<button type="button" onClick={()=>editDevice(device)}>Edit</button>}{permission?.delete&&<button className="remove-device" type="button" onClick={()=>removeDevice(device)}>Remove</button>}</div><DeviceSyncNotification job={deviceJobs[0]} backup={backup} />{device.lastError&&<p>{device.lastError}</p>}</article>;})}{!status.devices.length&&<p className="empty-device-list">No devices registered yet.</p>}</div></section></section>;
+}
+
+function DeviceSyncNotification({ job, backup }) {
+  if (job?.status === 'pending') return <div className="device-sync-notice pending" role="status"><strong>Synchronization queued</strong><small>Waiting for the on-site agent.</small></div>;
+  if (job?.status === 'running') return <div className="device-sync-notice running" role="status"><strong>Synchronization in progress</strong><small>The agent is reading this device.</small></div>;
+  if (job?.status === 'failed') return <div className="device-sync-notice failed" role="alert"><strong>Synchronization failed</strong><small>{job.error || 'The device could not be synchronized.'}</small></div>;
+  if (backup) return <div className="device-sync-notice completed" role="status"><strong>Last synchronized {new Date(backup.capturedAt).toLocaleString()}</strong><small>{backup.users} users · {backup.attendance} attendance records</small></div>;
+  return <div className="device-sync-notice"><strong>Not synchronized yet</strong><small>Run Sync to create the first backup.</small></div>;
+}
 
 function ModulePlaceholder({ moduleKey }) {
   const [title, description] = moduleCopy[moduleKey];

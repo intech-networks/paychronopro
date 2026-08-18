@@ -48,8 +48,9 @@ try {
        ('departments', 'Departments', 'Department structures and employee assignments.', 30),
        ('roles', 'Roles & Access', 'Roles and module operation permissions.', 40),
        ('time_tracking', 'Time Tracking', 'Time entries, clock-ins, and timesheets.', 50),
-       ('payroll', 'Payroll', 'Payroll periods, calculations, and exports.', 60),
-       ('reports', 'Reports', 'Workforce and payroll reporting.', 70)
+       ('scheduler', 'Sync Agent', 'Synchronizes users and attendance through the on-site device agent.', 60),
+       ('payroll', 'Payroll', 'Payroll periods, calculations, and exports.', 70),
+       ('reports', 'Reports', 'Workforce and payroll reporting.', 80)
      ON CONFLICT (module_key) DO UPDATE SET
        name = EXCLUDED.name, description = EXCLUDED.description,
        sort_order = EXCLUDED.sort_order, is_active = TRUE`

@@ -19,5 +19,7 @@ export const config = {
   adminName: process.env.ADMIN_NAME || 'PayTimePro Administrator',
   isProduction,
   databaseSsl: process.env.DATABASE_SSL === 'true',
-  trustProxy: process.env.TRUST_PROXY === 'true'
+  trustProxy: process.env.TRUST_PROXY === 'true',
+  syncAgentId: process.env.SYNC_AGENT_ID || 'office-main',
+  syncAgentSecret: process.env.SYNC_AGENT_SECRET || ''
 };

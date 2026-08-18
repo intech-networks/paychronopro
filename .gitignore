@@ -5,5 +5,8 @@ dist/
 .DS_Store
 coverage/
 server/uploads/
+storage/scheduler/
+agent/.env
+agent/data/
 sample_employee_accounts.txt
 paytimepro_backup_*.sql

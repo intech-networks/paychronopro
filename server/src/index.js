@@ -11,6 +11,7 @@ import { rbacRouter } from './routes/rbac.js';
 import { workforceRouter } from './routes/workforce.js';
 import { departmentsRouter } from './routes/departments.js';
 import { timeTrackingRouter } from './routes/time-tracking.js';
+import { schedulerRouter } from './routes/scheduler.js';
 
 export const app = express();
 const PgSession = connectPgSimple(session);
@@ -19,7 +20,7 @@ const sessionCookieName = 'paytimepro.sid';
 if (config.trustProxy) app.set('trust proxy', 1);
 app.use(helmet());
 app.use(cors({ origin: config.clientOrigin, credentials: true }));
-app.use(express.json({ limit: '100kb' }));
+app.use(express.json({ limit: '10mb' }));
 app.use(session({
   name: sessionCookieName,
   store: new PgSession({ pool, tableName: 'user_sessions', createTableIfMissing: true }),
@@ -102,6 +103,7 @@ app.use('/api/rbac', rbacRouter);
 app.use('/api/workforce', workforceRouter);
 app.use('/api/departments', departmentsRouter);
 app.use('/api/time-tracking', timeTrackingRouter);
+app.use('/api/scheduler', schedulerRouter);
 
 app.use((error, _request, response, _next) => {
   console.error(error);

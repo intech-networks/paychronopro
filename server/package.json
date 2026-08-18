@@ -8,7 +8,7 @@
     "start": "node src/index.js",
     "db:migrate": "node src/db/migrate.js",
     "test": "node --test",
-    "check": "node --check src/index.js && node --check src/routes/rbac.js && node --check src/routes/workforce.js && node --check src/routes/departments.js && node --check src/routes/time-tracking.js"
+    "check": "node --check src/index.js && node --check src/routes/rbac.js && node --check src/routes/workforce.js && node --check src/routes/departments.js && node --check src/routes/time-tracking.js && node --check src/routes/scheduler.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",
@@ -16,8 +16,8 @@
     "cors": "^2.8.5",
     "dotenv": "^17.2.1",
     "express": "^5.1.0",
+    "express-session": "^1.18.2",
     "helmet": "^8.1.0",
-    "pg": "^8.16.3",
-    "express-session": "^1.18.2"
+    "pg": "^8.16.3"
   }
 }
