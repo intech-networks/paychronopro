@@ -12,3 +12,9 @@ export function isIsoDate(value) {
   const date = new Date(`${value}T00:00:00Z`);
   return !Number.isNaN(date.valueOf()) && date.toISOString().startsWith(value);
 }
+
+export function isLeaveBalance(value) {
+  if (value === '' || value === null || value === undefined) return false;
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 && number <= 999 && Math.round(number * 100) === number * 100;
+}

@@ -8,7 +8,7 @@
     "start": "node src/index.js",
     "db:migrate": "node src/db/migrate.js",
     "test": "node --test",
-    "check": "node --check src/index.js && node --check src/routes/rbac.js && node --check src/routes/workforce.js && node --check src/routes/departments.js && node --check src/routes/time-tracking.js && node --check src/routes/scheduler.js"
+    "check": "node --check src/index.js && node --check src/routes/rbac.js && node --check src/routes/workforce.js && node --check src/routes/departments.js && node --check src/routes/leave-management.js && node --check src/routes/leave-requests.js && node --check src/routes/requests.js && node --check src/routes/time-tracking.js && node --check src/routes/scheduler.js && node --check src/time/leave-days.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",

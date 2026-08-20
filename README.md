@@ -72,7 +72,7 @@ Change the password and `SESSION_SECRET` in `.env` before using the application 
 The application stores roles, modules, and per-module Create/View/Update/Delete permissions in PostgreSQL. The migration seeds:
 
 - `Administrator` with full access to all modules.
-- `Employee` with View access to Overview and Time Tracking.
+- `Employee` with View access to Overview and Timetracking.
 
 Administrators can manage roles and permissions from **Dashboard → Roles & Access**, and assign roles from **Dashboard → Users**. API routes enforce the same permissions server-side under `/api/rbac`; hiding a dashboard item is not treated as authorization.
 

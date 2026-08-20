@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { pool } from '../db/pool.js';
-import { requirePermission } from '../auth/authorization.js';
+import { normalizePermissionHierarchy, requirePermission } from '../auth/authorization.js';
 import { isPositiveInteger } from '../validation.js';
 
 export const rbacRouter = Router();
@@ -76,8 +76,8 @@ rbacRouter.put('/roles/:id/permissions', ...requirePermission('roles', 'update')
   try {
     const roleResult = await client.query('SELECT is_system, name FROM roles WHERE id = $1', [request.params.id]);
     if (!roleResult.rows[0]) return response.status(404).json({ error: 'Role not found.' });
-    if (roleResult.rows[0].name === 'Administrator') return response.status(400).json({ error: 'Administrator always has full access.' });
-    const permissions = Array.isArray(request.body?.permissions) ? request.body.permissions : [];
+    if (roleResult.rows[0].name === 'Administrator') return response.status(400).json({ error: 'Administrator permissions are managed by the system.' });
+    const permissions = normalizePermissionHierarchy(Array.isArray(request.body?.permissions) ? request.body.permissions : []);
     await client.query('BEGIN');
     await client.query('DELETE FROM role_permissions WHERE role_id = $1', [request.params.id]);
     for (const item of permissions) {

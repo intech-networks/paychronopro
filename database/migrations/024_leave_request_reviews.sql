@@ -1,0 +1,3 @@
+ALTER TABLE employee_leave_requests
+  ADD COLUMN IF NOT EXISTS reviewed_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ;

@@ -1,5 +1,45 @@
 import { pool } from '../db/pool.js';
 
+export const parentModuleByChild = {
+  workforce: 'maintenance',
+  leave_management: 'maintenance',
+  departments: 'maintenance',
+  roles: 'maintenance',
+  time_entries: 'time_tracking',
+  shift_management: 'time_tracking',
+  requests: 'time_tracking',
+  leave_application: 'time_tracking',
+  overtime_request: 'time_tracking',
+  shift_change: 'time_tracking',
+  scheduler: 'utilities',
+  device_users: 'utilities'
+};
+
+const permissionOperations = ['create', 'view', 'update', 'delete'];
+
+export function normalizePermissionHierarchy(permissions) {
+  const normalized = new Map(permissions.map((permission) => [permission.moduleKey, { ...permission }]));
+  for (const [childKey, parentKey] of Object.entries(parentModuleByChild)) {
+    const child = normalized.get(childKey);
+    if (!child) continue;
+    const parent = normalized.get(parentKey) || { moduleKey:parentKey };
+    for (const operation of permissionOperations) {
+      parent[operation] = Boolean(parent[operation] || child[operation]);
+    }
+    normalized.set(parentKey, parent);
+  }
+  return [...normalized.values()];
+}
+
+export function hasPermission(user, moduleKey, operation) {
+  const permission = user.permissions.find((item) => item.moduleKey === moduleKey);
+  if (!permission?.[operation]) return false;
+  const parentKey = parentModuleByChild[moduleKey];
+  if (!parentKey) return true;
+  const parentPermission = user.permissions.find((item) => item.moduleKey === parentKey);
+  return Boolean(parentPermission?.[operation]);
+}
+
 export async function getSessionUser(userId) {
   const userResult = await pool.query(
     `SELECT u.id, u.email, u.display_name, r.id AS role_id, r.name AS role_name
@@ -48,8 +88,7 @@ export async function requireAuth(request, response, next) {
 
 export function requirePermission(moduleKey, operation) {
   return [requireAuth, (request, response, next) => {
-    const permission = request.user.permissions.find((item) => item.moduleKey === moduleKey);
-    if (!permission?.[operation]) {
+    if (!hasPermission(request.user, moduleKey, operation)) {
       return response.status(403).json({ error: `You do not have permission to ${operation} ${moduleKey}.` });
     }
     return next();
@@ -58,8 +97,7 @@ export function requirePermission(moduleKey, operation) {
 
 export function requireAnyPermission(moduleKey, operations) {
   return [requireAuth, (request, response, next) => {
-    const permission = request.user.permissions.find((item) => item.moduleKey === moduleKey);
-    if (!operations.some((operation) => permission?.[operation])) {
+    if (!operations.some((operation) => hasPermission(request.user, moduleKey, operation))) {
       return response.status(403).json({ error: `You do not have permission to modify ${moduleKey}.` });
     }
     return next();

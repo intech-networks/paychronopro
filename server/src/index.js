@@ -10,6 +10,9 @@ import { requireAuth } from './auth/authorization.js';
 import { rbacRouter } from './routes/rbac.js';
 import { workforceRouter } from './routes/workforce.js';
 import { departmentsRouter } from './routes/departments.js';
+import { leaveManagementRouter } from './routes/leave-management.js';
+import { leaveRequestsRouter } from './routes/leave-requests.js';
+import { requestsRouter } from './routes/requests.js';
 import { timeTrackingRouter } from './routes/time-tracking.js';
 import { schedulerRouter } from './routes/scheduler.js';
 
@@ -47,7 +50,8 @@ app.get('/api/health', async (_request, response) => {
       database: 'connected',
       schema: schemaReady ? 'ready' : 'missing'
     });
-  } catch {
+  } catch (error) {
+    console.error('Database health check failed', error);
     response.status(503).json({ status: 'degraded', database: 'disconnected', schema: 'unknown' });
   }
 });
@@ -102,12 +106,16 @@ app.post('/api/auth/logout', (request, response, next) => {
 app.use('/api/rbac', rbacRouter);
 app.use('/api/workforce', workforceRouter);
 app.use('/api/departments', departmentsRouter);
+app.use('/api/leave-management', leaveManagementRouter);
+app.use('/api/leave-requests', leaveRequestsRouter);
+app.use('/api/requests', requestsRouter);
 app.use('/api/time-tracking', timeTrackingRouter);
 app.use('/api/scheduler', schedulerRouter);
 
 app.use((error, _request, response, _next) => {
   console.error(error);
   if (error.type === 'entity.too.large') return response.status(413).json({ error: 'The uploaded document exceeds the 10 MB limit.' });
+  if (error.type === 'entity.parse.failed') return response.status(400).json({ error: 'The request contains invalid JSON.' });
   response.status(500).json({ error: 'Internal server error' });
 });
 

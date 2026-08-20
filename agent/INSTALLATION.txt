@@ -92,6 +92,35 @@ Check the scheduled task from an Administrator PowerShell window:
 The task state should normally be Running. LastTaskResult 267009 (0x41301)
 means the long-running task is active.
 
+
+STARTING AND RESTARTING THE AGENT
+---------------------------------
+Run these commands from a PowerShell window opened as Administrator.
+
+Start the Sync Agent:
+
+   Start-ScheduledTask -TaskName "PayTimePro Sync Agent"
+
+Restart the Sync Agent:
+
+   Stop-ScheduledTask -TaskName "PayTimePro Sync Agent"
+   Start-ScheduledTask -TaskName "PayTimePro Sync Agent"
+
+Confirm that the task is running:
+
+   Get-ScheduledTask -TaskName "PayTimePro Sync Agent"
+   Get-ScheduledTaskInfo -TaskName "PayTimePro Sync Agent"
+
+The Sync Agent page in PayTimePro should report Online within approximately
+15 seconds after the task starts.
+
+Alternatively, double-click one of these files in the repository's agent
+folder. Each file automatically requests Administrator access:
+
+   agent\start-sync-agent.cmd
+   agent\restart-sync-agent.cmd
+
+
 Open PayTimePro and go to Utilities > Sync Agent. The agent should show Online
 within approximately 15 seconds. The page considers an agent online when it has
 contacted the cloud within the last 60 seconds.

@@ -38,17 +38,28 @@ try {
   await pool.query(
     `INSERT INTO roles (name, description, is_system) VALUES
        ('Administrator', 'Full access to every module and operation.', TRUE),
-       ('Employee', 'Standard employee self-service access.', TRUE)
+       ('Employee', 'Standard employee self-service access.', TRUE),
+       ('HR Manager', 'Reviews employee requests and manages human resources workflows.', TRUE)
      ON CONFLICT (name) DO UPDATE SET description = EXCLUDED.description, is_system = TRUE`
   );
   await pool.query(
     `INSERT INTO modules (module_key, name, description, sort_order) VALUES
        ('overview', 'Overview', 'Dashboard overview and personal summary.', 10),
+       ('maintenance', 'Maintenance', 'Parent module for workforce administration.', 15),
        ('workforce', 'Workforce', 'Employee profiles and workforce records.', 20),
+       ('leave_management', 'Leave Management', 'Review and manage employee leave records.', 21),
        ('departments', 'Departments', 'Department structures and employee assignments.', 30),
        ('roles', 'Roles & Access', 'Roles and module operation permissions.', 40),
-       ('time_tracking', 'Time Tracking', 'Time entries, clock-ins, and timesheets.', 50),
+       ('time_tracking', 'Timetracking', 'Time entries, clock-ins, and timesheets.', 50),
+       ('time_entries', 'Time Entries', 'View employee attendance entries and time records.', 51),
+       ('shift_management', 'Shift Management', 'Assign employee shifts and working days.', 52),
+       ('requests', 'Requests', 'Review and manage employee time-related requests.', 53),
+       ('leave_application', 'Leave Application', 'Submit and review employee leave applications.', 54),
+       ('overtime_request', 'Overtime Request', 'Submit and review employee overtime requests.', 55),
+       ('shift_change', 'Shift Change', 'Submit and review employee shift change requests.', 56),
+       ('utilities', 'Utilities', 'Parent module for device and synchronization utilities.', 55),
        ('scheduler', 'Sync Agent', 'Synchronizes users and attendance through the on-site device agent.', 60),
+       ('device_users', 'Device Users', 'Push and reconcile users on attendance devices.', 61),
        ('payroll', 'Payroll', 'Payroll periods, calculations, and exports.', 70),
        ('reports', 'Reports', 'Workforce and payroll reporting.', 80)
      ON CONFLICT (module_key) DO UPDATE SET
@@ -57,16 +68,37 @@ try {
   );
   await pool.query(
     `INSERT INTO role_permissions (role_id, module_id, can_create, can_view, can_update, can_delete)
-     SELECT r.id, m.id, TRUE, TRUE, TRUE, TRUE FROM roles r CROSS JOIN modules m
+     SELECT r.id, m.id,
+       m.module_key NOT IN ('leave_application', 'overtime_request', 'shift_change'),
+       m.module_key NOT IN ('leave_application', 'overtime_request', 'shift_change'),
+       m.module_key NOT IN ('leave_application', 'overtime_request', 'shift_change'),
+       m.module_key NOT IN ('leave_application', 'overtime_request', 'shift_change')
+     FROM roles r CROSS JOIN modules m
      WHERE r.name = 'Administrator'
      ON CONFLICT (role_id, module_id) DO UPDATE SET
-       can_create = TRUE, can_view = TRUE, can_update = TRUE, can_delete = TRUE, updated_at = NOW()`
+       can_create = EXCLUDED.can_create, can_view = EXCLUDED.can_view,
+       can_update = EXCLUDED.can_update, can_delete = EXCLUDED.can_delete, updated_at = NOW()`
   );
   await pool.query(
     `INSERT INTO role_permissions (role_id, module_id, can_view)
-     SELECT r.id, m.id, TRUE FROM roles r JOIN modules m ON m.module_key IN ('overview', 'time_tracking')
+     SELECT r.id, m.id, TRUE FROM roles r JOIN modules m ON m.module_key IN ('overview', 'time_tracking', 'time_entries', 'shift_management', 'requests', 'leave_application', 'overtime_request', 'shift_change')
      WHERE r.name = 'Employee'
      ON CONFLICT (role_id, module_id) DO NOTHING`
+  );
+  await pool.query(
+    `UPDATE role_permissions permission SET can_create = TRUE, can_update = TRUE, updated_at = NOW()
+     FROM roles role, modules module
+     WHERE permission.role_id = role.id AND permission.module_id = module.id
+       AND role.name = 'Employee' AND module.module_key IN ('time_tracking', 'requests', 'leave_application')`
+  );
+  await pool.query(
+    `INSERT INTO role_permissions (role_id, module_id, can_view, can_update)
+     SELECT role.id, module.id, TRUE, TRUE
+     FROM roles role CROSS JOIN modules module
+     WHERE LOWER(role.name) = LOWER('HR Manager')
+       AND module.module_key IN ('time_tracking', 'requests', 'leave_application')
+     ON CONFLICT (role_id, module_id) DO UPDATE SET
+       can_view = TRUE, can_update = TRUE, updated_at = NOW()`
   );
   const passwordHash = await bcrypt.hash(config.adminPassword, 12);
   await pool.query(
