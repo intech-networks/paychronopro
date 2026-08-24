@@ -18,7 +18,7 @@ leaveManagementRouter.get('/employees', ...requirePermission('leave_management',
       `SELECT employee.id, employee.employee_number AS "employeeNumber",
               employee.first_name AS "firstName", employee.last_name AS "lastName",
               employee.preferred_name AS "preferredName", employee.email,
-              employee.department, employee.job_title AS "jobTitle",
+              employee.job_title AS "jobTitle",
               COALESCE(balance.vacation_leave, 0)::double precision AS "vacationLeave",
               COALESCE(balance.sick_leave, 0)::double precision AS "sickLeave",
               COALESCE(balance.emergency_leave, 0)::double precision AS "emergencyLeave"
@@ -27,7 +27,7 @@ leaveManagementRouter.get('/employees', ...requirePermission('leave_management',
        WHERE employee.employment_status = 'active'
          AND ($1 = '' OR employee.employee_number ILIKE $2 OR employee.first_name ILIKE $2
            OR employee.last_name ILIKE $2 OR employee.preferred_name ILIKE $2
-           OR employee.email ILIKE $2 OR employee.department ILIKE $2 OR employee.job_title ILIKE $2)
+           OR employee.email ILIKE $2 OR employee.job_title ILIKE $2)
        ORDER BY employee.last_name, employee.first_name`,
       [search, pattern]
     );

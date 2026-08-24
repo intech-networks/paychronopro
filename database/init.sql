@@ -80,7 +80,6 @@ CREATE TABLE IF NOT EXISTS employee_profiles (
   email TEXT NOT NULL UNIQUE,
   phone TEXT NOT NULL DEFAULT '',
   job_title TEXT NOT NULL DEFAULT '',
-  department TEXT NOT NULL DEFAULT '',
   hire_date DATE,
   employment_status TEXT NOT NULL DEFAULT 'active'
     CHECK (employment_status IN ('active', 'inactive')),
@@ -112,9 +111,6 @@ CREATE INDEX IF NOT EXISTS employee_documents_employee_id_idx
 
 CREATE INDEX IF NOT EXISTS employee_profiles_name_idx
   ON employee_profiles (last_name, first_name);
-CREATE INDEX IF NOT EXISTS employee_profiles_department_idx
-  ON employee_profiles (department);
-
 CREATE TABLE IF NOT EXISTS employee_shift_assignments (
   employee_id BIGINT PRIMARY KEY REFERENCES employee_profiles(id) ON DELETE CASCADE,
   shift_type TEXT NOT NULL CHECK (shift_type IN ('eight_to_five', 'nine_to_six', 'custom')),
@@ -147,23 +143,3 @@ ALTER TABLE employee_profiles
 ALTER TABLE employee_profiles
   ADD CONSTRAINT employee_profiles_employment_status_check
   CHECK (employment_status IN ('active', 'inactive'));
-
-CREATE TABLE IF NOT EXISTS departments (
-  id BIGSERIAL PRIMARY KEY,
-  name TEXT NOT NULL UNIQUE,
-  description TEXT NOT NULL DEFAULT '',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS department_assignments (
-  department_id BIGINT NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
-  employee_id BIGINT NOT NULL UNIQUE REFERENCES employee_profiles(id) ON DELETE CASCADE,
-  assignment_role TEXT NOT NULL CHECK (assignment_role IN ('manager', 'assistant_manager', 'member')),
-  assigned_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  PRIMARY KEY (department_id, employee_id)
-);
-
-CREATE UNIQUE INDEX IF NOT EXISTS department_one_manager_idx ON department_assignments (department_id) WHERE assignment_role = 'manager';
-CREATE UNIQUE INDEX IF NOT EXISTS department_one_assistant_manager_idx ON department_assignments (department_id) WHERE assignment_role = 'assistant_manager';
-CREATE INDEX IF NOT EXISTS department_assignments_department_idx ON department_assignments (department_id, assignment_role);

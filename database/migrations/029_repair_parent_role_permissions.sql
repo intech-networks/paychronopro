@@ -7,7 +7,6 @@ JOIN modules child ON child.id = child_permission.module_id
 JOIN (VALUES
   ('maintenance', 'workforce'),
   ('maintenance', 'leave_management'),
-  ('maintenance', 'departments'),
   ('maintenance', 'roles'),
   ('time_tracking', 'time_entries'),
   ('time_tracking', 'shift_management'),

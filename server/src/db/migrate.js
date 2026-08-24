@@ -45,13 +45,18 @@ try {
   await pool.query(
     `INSERT INTO modules (module_key, name, description, sort_order) VALUES
        ('overview', 'Overview', 'Dashboard overview and personal summary.', 10),
+       ('setup', 'Setup', 'Parent module for company and organization configuration.', 11),
+       ('company', 'Company', 'Company profile and settings.', 12),
+       ('organization', 'Organization', 'Organization structure and settings.', 13),
+       ('workforce_module', 'Workforce', 'Parent module for employee records and workforce information.', 14),
+       ('tax_configuration', 'Tax Configuration', 'Configure Philippine salary tax withholding rules.', 72),
        ('maintenance', 'Maintenance', 'Parent module for workforce administration.', 15),
-       ('workforce', 'Workforce', 'Employee profiles and workforce records.', 20),
+       ('workforce', 'Employees', 'Employee profiles and workforce records.', 20),
        ('leave_management', 'Leave Management', 'Review and manage employee leave records.', 21),
-       ('departments', 'Departments', 'Department structures and employee assignments.', 30),
        ('roles', 'Roles & Access', 'Roles and module operation permissions.', 40),
        ('time_tracking', 'Timetracking', 'Time entries, clock-ins, and timesheets.', 50),
        ('time_entries', 'Time Entries', 'View employee attendance entries and time records.', 51),
+       ('exemption_report', 'Exemption Report', 'Monthly consolidated daily time-entry exemptions.', 52),
        ('shift_management', 'Shift Management', 'Assign employee shifts and working days.', 52),
        ('requests', 'Requests', 'Review and manage employee time-related requests.', 53),
        ('leave_application', 'Leave Application', 'Submit and review employee leave applications.', 54),
@@ -61,6 +66,8 @@ try {
        ('scheduler', 'Sync Agent', 'Synchronizes users and attendance through the on-site device agent.', 60),
        ('device_users', 'Device Users', 'Push and reconcile users on attendance devices.', 61),
        ('payroll', 'Payroll', 'Payroll periods, calculations, and exports.', 70),
+       ('payroll_setup', 'Salary Setup', 'Configure employee compensation, earnings, and deductions.', 71),
+       ('payout_view', 'Payout View', 'Preview actual employee payout calculations by pay period.', 73),
        ('reports', 'Reports', 'Workforce and payroll reporting.', 80)
      ON CONFLICT (module_key) DO UPDATE SET
        name = EXCLUDED.name, description = EXCLUDED.description,
@@ -81,7 +88,7 @@ try {
   );
   await pool.query(
     `INSERT INTO role_permissions (role_id, module_id, can_view)
-     SELECT r.id, m.id, TRUE FROM roles r JOIN modules m ON m.module_key IN ('overview', 'time_tracking', 'time_entries', 'shift_management', 'requests', 'leave_application', 'overtime_request', 'shift_change')
+     SELECT r.id, m.id, TRUE FROM roles r JOIN modules m ON m.module_key IN ('overview', 'setup', 'time_tracking', 'time_entries', 'shift_management', 'requests', 'leave_application', 'overtime_request', 'shift_change')
      WHERE r.name = 'Employee'
      ON CONFLICT (role_id, module_id) DO NOTHING`
   );
@@ -116,7 +123,7 @@ try {
   );
   console.log('Database migration complete.');
 } catch (error) {
-  console.error('Database migration failed:', error.message);
+  console.error('Database migration failed:', error.message || error);
   process.exitCode = 1;
 } finally {
   await pool.end();

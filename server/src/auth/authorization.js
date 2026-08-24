@@ -1,18 +1,23 @@
 import { pool } from '../db/pool.js';
 
 export const parentModuleByChild = {
-  workforce: 'maintenance',
-  leave_management: 'maintenance',
-  departments: 'maintenance',
-  roles: 'maintenance',
+  company: 'setup',
+  organization: 'setup',
+  shift_management: 'setup',
+  tax_configuration: 'payroll',
+  workforce: 'workforce_module',
+  leave_management: 'setup',
+  roles: 'setup',
   time_entries: 'time_tracking',
-  shift_management: 'time_tracking',
+  exemption_report: 'time_tracking',
   requests: 'time_tracking',
   leave_application: 'time_tracking',
   overtime_request: 'time_tracking',
   shift_change: 'time_tracking',
   scheduler: 'utilities',
-  device_users: 'utilities'
+  device_users: 'utilities',
+  payroll_setup: 'payroll'
+  ,payout_view: 'payroll'
 };
 
 const permissionOperations = ['create', 'view', 'update', 'delete'];
@@ -53,9 +58,24 @@ export async function getSessionUser(userId) {
   const permissionResult = await pool.query(
     `SELECT m.module_key, m.name, rp.can_create, rp.can_view, rp.can_update, rp.can_delete
      FROM role_permissions rp JOIN modules m ON m.id = rp.module_id
-     WHERE rp.role_id = $1 AND m.is_active = TRUE ORDER BY m.sort_order, m.name`,
+     WHERE rp.role_id = $1 AND m.is_active = TRUE AND m.module_key <> 'departments'
+     ORDER BY m.sort_order, m.name`,
     [row.role_id]
   );
+
+  const permissions = permissionResult.rows.map((permission) => ({
+    moduleKey: permission.module_key,
+    moduleName: permission.name,
+    create: permission.can_create,
+    view: permission.can_view,
+    update: permission.can_update,
+    delete: permission.can_delete
+  }));
+  if (row.role_name === 'Administrator') {
+    for (const [moduleKey, moduleName] of [['setup','Setup'], ['company','Company'], ['organization','Organization']]) {
+      if (!permissions.some((permission) => permission.moduleKey === moduleKey)) permissions.push({ moduleKey, moduleName, create:true, view:true, update:true, delete:true });
+    }
+  }
 
   return {
     id: row.id,
@@ -63,14 +83,7 @@ export async function getSessionUser(userId) {
     displayName: row.display_name,
     role: row.role_name,
     roleId: row.role_id,
-    permissions: permissionResult.rows.map((permission) => ({
-      moduleKey: permission.module_key,
-      moduleName: permission.name,
-      create: permission.can_create,
-      view: permission.can_view,
-      update: permission.can_update,
-      delete: permission.can_delete
-    }))
+    permissions
   };
 }
 

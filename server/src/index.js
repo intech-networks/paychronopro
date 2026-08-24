@@ -9,12 +9,16 @@ import { pool } from './db/pool.js';
 import { requireAuth } from './auth/authorization.js';
 import { rbacRouter } from './routes/rbac.js';
 import { workforceRouter } from './routes/workforce.js';
-import { departmentsRouter } from './routes/departments.js';
 import { leaveManagementRouter } from './routes/leave-management.js';
 import { leaveRequestsRouter } from './routes/leave-requests.js';
 import { requestsRouter } from './routes/requests.js';
 import { timeTrackingRouter } from './routes/time-tracking.js';
 import { schedulerRouter } from './routes/scheduler.js';
+import { organizationRouter } from './routes/organization.js';
+import { payrollRouter } from './routes/payroll.js';
+import { payrollComplianceRouter } from './routes/payroll-compliance.js';
+import { payoutRouter } from './routes/payout.js';
+import { taxRouter } from './routes/tax.js';
 
 export const app = express();
 const PgSession = connectPgSimple(session);
@@ -105,12 +109,16 @@ app.post('/api/auth/logout', (request, response, next) => {
 
 app.use('/api/rbac', rbacRouter);
 app.use('/api/workforce', workforceRouter);
-app.use('/api/departments', departmentsRouter);
 app.use('/api/leave-management', leaveManagementRouter);
 app.use('/api/leave-requests', leaveRequestsRouter);
 app.use('/api/requests', requestsRouter);
 app.use('/api/time-tracking', timeTrackingRouter);
 app.use('/api/scheduler', schedulerRouter);
+app.use('/api/organization', organizationRouter);
+app.use('/api/payroll', payrollRouter);
+app.use('/api/payroll', payrollComplianceRouter);
+app.use('/api/payroll', payoutRouter);
+app.use('/api/tax-configurations', taxRouter);
 
 app.use((error, _request, response, _next) => {
   console.error(error);

@@ -22,8 +22,8 @@ const employees = [
   ['000008', 'Bianca', 'Mercado', 'Bianca', 'bianca.mercado@paytimepro.local', '+63 917 210 1008', 'Marketing Coordinator', 'Marketing', '2023-08-21'],
   ['000009', 'Enzo', 'Bautista', 'Enzo', 'enzo.bautista@paytimepro.local', '+63 917 210 1009', 'Quality Assurance Engineer', 'Engineering', '2024-02-05'],
   ['000010', 'Mikaela', 'Torres', 'Mika', 'mikaela.torres@paytimepro.local', '+63 917 210 1010', 'Sales Executive', 'Sales', '2024-06-17']
-].map(([employeeNumber, firstName, lastName, preferredName, email, phone, jobTitle, department, hireDate]) => ({
-  employeeNumber, firstName, lastName, preferredName, email, phone, jobTitle, department, hireDate
+].map(([employeeNumber, firstName, lastName, preferredName, email, phone, jobTitle, , hireDate]) => ({
+  employeeNumber, firstName, lastName, preferredName, email, phone, jobTitle, hireDate
 }));
 
 const replacementEmails = employees.map((employee) => employee.email);
@@ -97,13 +97,13 @@ try {
       await client.query(
         `INSERT INTO employee_profiles
          (user_id, employee_number, first_name, last_name, preferred_name, email, phone,
-          job_title, department, hire_date, emergency_contact_name,
+          job_title, hire_date, emergency_contact_name,
           emergency_contact_relationship, emergency_contact_phone,
           emergency_contact_alternate_phone, employment_status)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'active')`,
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'active')`,
         [userResult.rows[0].id, employee.employeeNumber, employee.firstName, employee.lastName,
           employee.preferredName, employee.email, employee.phone, employee.jobTitle,
-          employee.department, employee.hireDate, ...emergency]
+          employee.hireDate, ...emergency]
       );
     }
     await client.query('COMMIT');

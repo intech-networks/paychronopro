@@ -24,28 +24,13 @@ requestsRouter.get('/', ...requirePermission('requests', 'view'), async (request
               requester.id AS "employeeId", requester.employee_number AS "employeeNumber",
               requester.first_name AS "firstName", requester.last_name AS "lastName",
               requester.preferred_name AS "preferredName",
-              COALESCE(shift.work_days, ARRAY['monday','tuesday','wednesday','thursday','friday']::TEXT[]) AS "workDays",
-              department.name AS department
+              COALESCE(shift.work_days, ARRAY['monday','tuesday','wednesday','thursday','friday']::TEXT[]) AS "workDays"
        FROM employee_leave_requests leave_request
        JOIN employee_profiles requester ON requester.id = leave_request.employee_id
        JOIN employee_profiles reviewer ON reviewer.user_id = $1
        LEFT JOIN employee_shift_assignments shift ON shift.employee_id = requester.id
-       LEFT JOIN department_assignments requester_assignment
-         ON requester_assignment.employee_id = requester.id
-       LEFT JOIN departments department ON department.id = requester_assignment.department_id
        WHERE requester.id <> reviewer.id
-         AND (
-           leave_request.approver_employee_id = reviewer.id
-           OR EXISTS (
-             SELECT 1
-             FROM department_assignments manager_assignment
-             JOIN department_assignments assigned_employee
-               ON assigned_employee.department_id = manager_assignment.department_id
-             WHERE manager_assignment.employee_id = reviewer.id
-               AND manager_assignment.assignment_role = 'manager'
-               AND assigned_employee.employee_id = requester.id
-           )
-         )
+         AND leave_request.approver_employee_id = reviewer.id
        ORDER BY leave_request.status = 'pending' DESC, leave_request.created_at DESC
        LIMIT 500`,
       [request.user.id]
@@ -74,24 +59,13 @@ requestsRouter.patch('/leave/:requestId/review', ...requirePermission('requests'
        JOIN employee_profiles reviewer ON reviewer.user_id = $2
        WHERE leave_request.id = $1
          AND leave_request.employee_id <> reviewer.id
-         AND (
-           leave_request.approver_employee_id = reviewer.id
-           OR EXISTS (
-             SELECT 1
-             FROM department_assignments manager_assignment
-             JOIN department_assignments assigned_employee
-               ON assigned_employee.department_id = manager_assignment.department_id
-             WHERE manager_assignment.employee_id = reviewer.id
-               AND manager_assignment.assignment_role = 'manager'
-               AND assigned_employee.employee_id = leave_request.employee_id
-           )
-         )
+         AND leave_request.approver_employee_id = reviewer.id
        FOR UPDATE OF leave_request`,
       [requestId, request.user.id]
     );
     if (!requestResult.rowCount) {
       await client.query('ROLLBACK');
-      return response.status(404).json({ error: 'This request is not assigned to you or one of your employees.' });
+      return response.status(404).json({ error: 'This request is not assigned to you.' });
     }
 
     const leaveRequest = requestResult.rows[0];

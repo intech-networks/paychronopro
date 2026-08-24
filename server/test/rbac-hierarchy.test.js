@@ -8,18 +8,23 @@ function userWith(...permissions) {
 
 test('defines every parent and child module relationship', () => {
   assert.deepEqual(parentModuleByChild, {
-    workforce: 'maintenance',
-    leave_management: 'maintenance',
-    departments: 'maintenance',
-    roles: 'maintenance',
+    company: 'setup',
+    organization: 'setup',
+    shift_management: 'setup',
+    tax_configuration: 'payroll',
+    workforce: 'workforce_module',
+    leave_management: 'setup',
+    roles: 'setup',
     time_entries: 'time_tracking',
-    shift_management: 'time_tracking',
+    exemption_report: 'time_tracking',
     requests: 'time_tracking',
     leave_application: 'time_tracking',
     overtime_request: 'time_tracking',
     shift_change: 'time_tracking',
     scheduler: 'utilities',
-    device_users: 'utilities'
+    device_users: 'utilities',
+    payroll_setup: 'payroll'
+    ,payout_view: 'payroll'
   });
 });
 
@@ -29,7 +34,7 @@ test('child access requires the same operation on its parent', () => {
   assert.equal(hasPermission(childOnly, 'shift_management', 'update'), false);
 
   const parentAndChild = userWith(
-    ['time_tracking', { view:true, update:false }],
+    ['setup', { view:true, update:false }],
     ['shift_management', { view:true, update:true }]
   );
   assert.equal(hasPermission(parentAndChild, 'shift_management', 'view'), true);

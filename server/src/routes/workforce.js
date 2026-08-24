@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { pool } from '../db/pool.js';
 import { requireAnyPermission, requirePermission } from '../auth/authorization.js';
 import { isEmail, isIsoDate, isPositiveInteger } from '../validation.js';
+import { ensureOrganizationSchema } from './organization.js';
 
 export const workforceRouter = Router();
 const documentDirectory = fileURLToPath(new URL('../../uploads/employee-documents/', import.meta.url));
@@ -60,6 +61,10 @@ function validateProfile(profile) {
   return null;
 }
 
+async function ensureEmployeeDepartmentSchema() {
+  await pool.query("ALTER TABLE employee_profiles ADD COLUMN IF NOT EXISTS department TEXT NOT NULL DEFAULT ''");
+}
+
 async function nextEmployeeNumber(client) {
   // Serialize number allocation so simultaneous employee creation cannot receive the same ID.
   await client.query("SELECT pg_advisory_xact_lock(hashtext('employee_profiles.employee_number'))");
@@ -85,13 +90,13 @@ function handleDatabaseError(error, response, next) {
 
 workforceRouter.get('/', ...requirePermission('workforce', 'view'), async (request, response, next) => {
   try {
+    await ensureEmployeeDepartmentSchema();
     const search = String(request.query.search || '').trim();
     const pattern = `%${search}%`;
     const result = await pool.query(
       `SELECT ${profileColumns} FROM employee_profiles
        WHERE $1 = '' OR employee_number ILIKE $2 OR first_name ILIKE $2
-          OR last_name ILIKE $2 OR email ILIKE $2 OR department ILIKE $2
-          OR job_title ILIKE $2
+          OR last_name ILIKE $2 OR email ILIKE $2 OR job_title ILIKE $2 OR department ILIKE $2
        ORDER BY last_name, first_name LIMIT 200`,
       [search, pattern]
     );
@@ -110,10 +115,20 @@ workforceRouter.get('/role-options', ...requireAnyPermission('workforce', ['crea
   } catch (error) { next(error); }
 });
 
+workforceRouter.get('/position-options', ...requireAnyPermission('workforce', ['create', 'update']), async (_request, response, next) => {
+  try {
+    await ensureOrganizationSchema();
+    const result = await pool.query('SELECT id, name FROM organization_positions ORDER BY level, name');
+    response.json({ positions:result.rows });
+  } catch (error) { next(error); }
+});
+
 workforceRouter.get('/department-options', ...requireAnyPermission('workforce', ['create', 'update']), async (_request, response, next) => {
   try {
-    const result = await pool.query('SELECT id, name FROM departments ORDER BY name');
-    response.json({ departments: result.rows });
+    await ensureOrganizationSchema();
+    await ensureEmployeeDepartmentSchema();
+    const result = await pool.query('SELECT id, name FROM organization_departments ORDER BY name');
+    response.json({ departments:result.rows });
   } catch (error) { next(error); }
 });
 
@@ -135,6 +150,7 @@ workforceRouter.get('/documents/:documentId/content', ...requirePermission('work
 
 workforceRouter.get('/:id', ...requirePermission('workforce', 'view'), async (request, response, next) => {
   try {
+    await ensureEmployeeDepartmentSchema();
     if (!isPositiveInteger(request.params.id)) return response.status(400).json({ error: 'Invalid employee ID.' });
     const result = await pool.query(
       `SELECT ${profileColumns},
@@ -191,18 +207,12 @@ workforceRouter.post('/', ...requirePermission('workforce', 'create'), async (re
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    await client.query("ALTER TABLE employee_profiles ADD COLUMN IF NOT EXISTS department TEXT NOT NULL DEFAULT ''");
     profile.employeeNumber = await nextEmployeeNumber(client);
     const roleResult = await client.query("SELECT id FROM roles WHERE id = $1 AND name <> 'Administrator'", [request.body.roleId]);
     if (!roleResult.rows[0]) {
       await client.query('ROLLBACK');
       return response.status(400).json({ error: 'Select a valid employee role.' });
-    }
-    const departmentResult = profile.department
-      ? await client.query('SELECT id, name FROM departments WHERE name = $1', [profile.department])
-      : { rows: [] };
-    if (profile.department && !departmentResult.rows[0]) {
-      await client.query('ROLLBACK');
-      return response.status(400).json({ error: 'Select a valid department.' });
     }
     const passwordHash = await bcrypt.hash(temporaryPassword, 12);
     const userResult = await client.query(
@@ -221,12 +231,6 @@ workforceRouter.post('/', ...requirePermission('workforce', 'create'), async (re
        RETURNING ${profileColumns}`,
       [...Object.values(profile), userResult.rows[0].id]
     );
-    if (departmentResult.rows[0]) {
-      await client.query(
-        "INSERT INTO department_assignments (department_id, employee_id, assignment_role) VALUES ($1,$2,'member')",
-        [departmentResult.rows[0].id, result.rows[0].id]
-      );
-    }
     await client.query('COMMIT');
     response.status(201).json({ employee: result.rows[0] });
   } catch (error) {
@@ -246,6 +250,7 @@ workforceRouter.put('/:id', ...requirePermission('workforce', 'update'), async (
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    await client.query("ALTER TABLE employee_profiles ADD COLUMN IF NOT EXISTS department TEXT NOT NULL DEFAULT ''");
     const existing = await client.query('SELECT user_id, employee_number FROM employee_profiles WHERE id = $1 FOR UPDATE', [request.params.id]);
     if (!existing.rows[0]) {
       await client.query('ROLLBACK');
@@ -256,13 +261,6 @@ workforceRouter.put('/:id', ...requirePermission('workforce', 'update'), async (
     if (!roleResult.rows[0]) {
       await client.query('ROLLBACK');
       return response.status(400).json({ error: 'Select a valid employee role.' });
-    }
-    const departmentResult = profile.department
-      ? await client.query('SELECT id, name FROM departments WHERE name = $1', [profile.department])
-      : { rows: [] };
-    if (profile.department && !departmentResult.rows[0]) {
-      await client.query('ROLLBACK');
-      return response.status(400).json({ error: 'Select a valid department.' });
     }
     let userId = existing.rows[0].user_id;
     const displayName = `${profile.firstName} ${profile.lastName}`;
@@ -294,22 +292,6 @@ workforceRouter.put('/:id', ...requirePermission('workforce', 'update'), async (
        WHERE id=$16 RETURNING ${profileColumns}`,
       values
     );
-    if (departmentResult.rows[0]) {
-      await client.query(
-        `INSERT INTO department_assignments (department_id, employee_id, assignment_role)
-         VALUES ($1,$2,'member')
-         ON CONFLICT (employee_id) DO UPDATE SET
-           department_id = EXCLUDED.department_id,
-           assignment_role = CASE
-             WHEN department_assignments.department_id = EXCLUDED.department_id
-               AND department_assignments.assignment_role IN ('manager', 'assistant_manager')
-             THEN department_assignments.assignment_role ELSE 'member' END,
-           assigned_at = NOW()`,
-        [departmentResult.rows[0].id, request.params.id]
-      );
-    } else {
-      await client.query('DELETE FROM department_assignments WHERE employee_id = $1', [request.params.id]);
-    }
     await client.query('COMMIT');
     response.json({ employee: result.rows[0] });
   } catch (error) {

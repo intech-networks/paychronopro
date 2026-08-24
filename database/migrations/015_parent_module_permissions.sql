@@ -13,7 +13,6 @@ FROM role_permissions child_permission
 JOIN modules child ON child.id = child_permission.module_id
 JOIN (VALUES
   ('maintenance', 'workforce'),
-  ('maintenance', 'departments'),
   ('maintenance', 'roles'),
   ('utilities', 'scheduler'),
   ('utilities', 'device_users')

@@ -76,8 +76,8 @@ The application stores roles, modules, and per-module Create/View/Update/Delete 
 
 Administrators can manage roles and permissions from **Dashboard → Roles & Access**, and assign roles from **Dashboard → Users**. API routes enforce the same permissions server-side under `/api/rbac`; hiding a dashboard item is not treated as authorization.
 
-## Workforce
+## Employees
 
-The **Dashboard → Workforce** module manages employee profiles, including employee ID, contact details, job title, department, hire date, and employment status. Create, View, Update, and Delete actions are independently controlled by the role's Workforce permissions and enforced under `/api/workforce`.
+The **Dashboard → Employees** module manages employee profiles, including employee ID, contact details, job title, hire date, and employment status. Create, View, Update, and Delete actions are independently controlled by the role's Employees permissions and enforced under `/api/workforce`.
 
 Creating an employee also creates a linked login account using the profile email and the temporary password supplied in the form. The account receives the `Employee` role. Editing the profile can reset its password, and deleting the profile removes the linked login account.

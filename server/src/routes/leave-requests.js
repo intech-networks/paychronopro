@@ -247,47 +247,21 @@ leaveRequestsRouter.post('/', ...requirePermission('leave_application', 'create'
       transactionStarted = false;
       return response.status(400).json({ error: 'The selected range contains only rest days.' });
     }
-    const requesterIsDepartmentManager = await client.query(
-      `SELECT 1 FROM department_assignments
-       WHERE employee_id = $1 AND assignment_role = 'manager' LIMIT 1`,
-      [employeeResult.rows[0].id]
-    );
-    let approverResult = { rowCount:0, rows:[] };
-    if (!requesterIsDepartmentManager.rowCount) {
-      approverResult = await client.query(
+    const approverResult = await client.query(
         `SELECT manager.id
-         FROM department_assignments requester_assignment
-         JOIN department_assignments manager_assignment
-           ON manager_assignment.department_id = requester_assignment.department_id
-          AND manager_assignment.assignment_role = 'manager'
-         JOIN employee_profiles manager ON manager.id = manager_assignment.employee_id
-         JOIN users manager_user ON manager_user.id = manager.user_id AND manager_user.is_active = TRUE
-         WHERE requester_assignment.employee_id = $1
-           AND manager.id <> $1 AND manager.employment_status = 'active'
-         ORDER BY manager.id LIMIT 1`,
-        [employeeResult.rows[0].id]
-      );
-    }
-    if (!approverResult.rowCount) {
-      approverResult = await client.query(
-        `SELECT hr_employee.id
-         FROM employee_profiles hr_employee
-         JOIN users hr_user ON hr_user.id = hr_employee.user_id AND hr_user.is_active = TRUE
-         JOIN roles hr_role ON hr_role.id = hr_user.role_id
-         WHERE LOWER(hr_role.name) = LOWER('HR Manager')
-           AND hr_employee.employment_status = 'active' AND hr_employee.id <> $1
-         ORDER BY hr_employee.last_name, hr_employee.first_name, hr_employee.id
+         FROM organization_assignments requester_assignment
+         JOIN employee_profiles manager ON manager.id=requester_assignment.manager_employee_id
+         JOIN users manager_user ON manager_user.id=manager.user_id AND manager_user.is_active=TRUE
+         WHERE requester_assignment.employee_id=$1
+           AND requester_assignment.effective_to IS NULL
+           AND manager.employment_status='active'
          LIMIT 1`,
         [employeeResult.rows[0].id]
       );
-    }
     if (!approverResult.rowCount) {
       await client.query('ROLLBACK');
       transactionStarted = false;
-      const error = requesterIsDepartmentManager.rowCount
-        ? 'No other active employee with the HR Manager role is available to approve your request.'
-        : 'No department manager or HR Manager is available to approve this request.';
-      return response.status(409).json({ error });
+      return response.status(409).json({ error:'Your organization assignment does not have an active direct manager who can approve this request.' });
     }
     const balanceColumn = balanceColumnByLeaveType[leaveType];
     const balanceResult = await client.query(

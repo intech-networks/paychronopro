@@ -4,14 +4,21 @@ import { normalizePermissionHierarchy, requirePermission } from '../auth/authori
 import { isPositiveInteger } from '../validation.js';
 
 export const rbacRouter = Router();
+const setupModules = [
+  { moduleKey:'setup', name:'Setup', description:'Parent module for company and organization configuration.', sortOrder:11 },
+  { moduleKey:'company', name:'Company', description:'Company profile and settings.', sortOrder:12 },
+  { moduleKey:'organization', name:'Organization', description:'Organization structure and settings.', sortOrder:13 }
+];
 
 rbacRouter.get('/modules', ...requirePermission('roles', 'view'), async (_request, response, next) => {
   try {
     const result = await pool.query(
       `SELECT id, module_key AS "moduleKey", name, description, sort_order AS "sortOrder"
-       FROM modules WHERE is_active = TRUE ORDER BY sort_order, name`
+       FROM modules WHERE is_active = TRUE AND module_key <> 'departments'
+       ORDER BY sort_order, name`
     );
-    response.json({ modules: result.rows });
+    const existingKeys = new Set(result.rows.map((module) => module.moduleKey));
+    response.json({ modules:[...result.rows, ...setupModules.filter((module) => !existingKeys.has(module.moduleKey))].sort((left, right) => left.sortOrder - right.sortOrder) });
   } catch (error) { next(error); }
 });
 
@@ -24,12 +31,20 @@ rbacRouter.get('/roles', ...requirePermission('roles', 'view'), async (_request,
       `SELECT rp.role_id AS "roleId", m.module_key AS "moduleKey",
               rp.can_create AS create, rp.can_view AS view,
               rp.can_update AS update, rp.can_delete AS delete
-       FROM role_permissions rp JOIN modules m ON m.id = rp.module_id ORDER BY m.sort_order`
+       FROM role_permissions rp JOIN modules m ON m.id = rp.module_id
+       WHERE m.module_key <> 'departments' ORDER BY m.sort_order`
     );
-    response.json({ roles: roles.rows.map((role) => ({
-      ...role,
-      permissions: permissions.rows.filter((permission) => String(permission.roleId) === String(role.id))
-    })) });
+    response.json({ roles: roles.rows.map((role) => {
+      const rolePermissions = permissions.rows.filter((permission) => String(permission.roleId) === String(role.id));
+      if (role.name === 'Administrator') {
+        for (const module of setupModules) {
+          if (!rolePermissions.some((permission) => permission.moduleKey === module.moduleKey)) {
+            rolePermissions.push({ roleId:role.id, moduleKey:module.moduleKey, create:true, view:true, update:true, delete:true });
+          }
+        }
+      }
+      return { ...role, permissions:rolePermissions };
+    }) });
   } catch (error) { next(error); }
 });
 
@@ -79,6 +94,13 @@ rbacRouter.put('/roles/:id/permissions', ...requirePermission('roles', 'update')
     if (roleResult.rows[0].name === 'Administrator') return response.status(400).json({ error: 'Administrator permissions are managed by the system.' });
     const permissions = normalizePermissionHierarchy(Array.isArray(request.body?.permissions) ? request.body.permissions : []);
     await client.query('BEGIN');
+    await client.query(
+      `INSERT INTO modules (module_key, name, description, sort_order) VALUES
+         ('setup', 'Setup', 'Parent module for company and organization configuration.', 11),
+         ('company', 'Company', 'Company profile and settings.', 12),
+         ('organization', 'Organization', 'Organization structure and settings.', 13)
+       ON CONFLICT (module_key) DO UPDATE SET is_active=TRUE`
+    );
     await client.query('DELETE FROM role_permissions WHERE role_id = $1', [request.params.id]);
     for (const item of permissions) {
       await client.query(

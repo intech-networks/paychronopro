@@ -3,7 +3,7 @@ import { pool } from '../src/db/pool.js';
 try {
   const result = await pool.query(
     `SELECT ep.id, ep.employee_number, ep.first_name, ep.last_name, ep.preferred_name,
-            ep.email, ep.phone, ep.job_title, ep.department, ep.hire_date,
+            ep.email, ep.phone, ep.job_title, ep.hire_date,
             ep.emergency_contact_name, ep.emergency_contact_relationship,
             ep.emergency_contact_phone, ep.emergency_contact_alternate_phone,
             ep.employment_status, ep.user_id, u.is_system, r.name AS role,
