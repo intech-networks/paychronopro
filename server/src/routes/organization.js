@@ -2,130 +2,41 @@ import { Router } from 'express';
 import { pool } from '../db/pool.js';
 import { requirePermission } from '../auth/authorization.js';
 import { isIsoDate, isPositiveInteger } from '../validation.js';
+import { replaceCurrentOrganizationAssignment } from '../organization/assignment-service.js';
 
 export const organizationRouter = Router();
 
+let organizationSchemaReady;
+
 export async function ensureOrganizationSchema() {
-  await pool.query(
-    `CREATE TABLE IF NOT EXISTS organization_departments (
-       id BIGSERIAL PRIMARY KEY,
-       name TEXT NOT NULL UNIQUE,
-       description TEXT NOT NULL DEFAULT '',
-       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-     )`
-  );
-  await pool.query('CREATE INDEX IF NOT EXISTS organization_departments_name_idx ON organization_departments (name)');
-  await pool.query('ALTER TABLE organization_departments ADD COLUMN IF NOT EXISTS parent_id BIGINT REFERENCES organization_departments(id) ON DELETE RESTRICT');
-  await pool.query("ALTER TABLE organization_departments ADD COLUMN IF NOT EXISTS unit_type TEXT NOT NULL DEFAULT 'department'");
-  await pool.query('CREATE INDEX IF NOT EXISTS organization_departments_parent_idx ON organization_departments (parent_id)');
-  await pool.query(
-    `INSERT INTO organization_departments (name) VALUES
-       ('Executive Management'),
-       ('Human Resources'),
-       ('Finance and Accounting'),
-       ('Operations'),
-       ('Information Technology'),
-       ('Sales'),
-       ('Marketing'),
-       ('Customer Service')
-     ON CONFLICT (name) DO NOTHING`
-  );
-  await pool.query(
-    `CREATE TABLE IF NOT EXISTS organization_positions (
-       id BIGSERIAL PRIMARY KEY,
-       name TEXT NOT NULL UNIQUE,
-       description TEXT NOT NULL DEFAULT '',
-       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-     )`
-  );
-  await pool.query('CREATE INDEX IF NOT EXISTS organization_positions_name_idx ON organization_positions (name)');
-  await pool.query('ALTER TABLE organization_positions ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0');
-  await pool.query('ALTER TABLE organization_positions ADD COLUMN IF NOT EXISTS level INTEGER NOT NULL DEFAULT 1');
-  await pool.query(
-    `INSERT INTO organization_positions (name) VALUES
-       ('Rank and File'),
-       ('Department Supervisor'),
-       ('Department Manager'),
-       ('Area Manager'),
-       ('Senior Manager'),
-       ('Vice President'),
-       ('President'),
-       ('Chief Executive Officer')
-     ON CONFLICT (name) DO NOTHING`
-  );
-  await pool.query(
-    `WITH ranked AS (SELECT id, ROW_NUMBER() OVER (ORDER BY id) AS position_order FROM organization_positions)
-     UPDATE organization_positions position SET sort_order=ranked.position_order
-     FROM ranked WHERE ranked.id=position.id AND position.sort_order=0`
-  );
-  await pool.query(
-    `WITH position_scale AS (SELECT COALESCE(MAX(sort_order),1) AS maximum FROM organization_positions)
-     UPDATE organization_positions position
-     SET level=position_scale.maximum + 1 - position.sort_order
-     FROM position_scale
-     WHERE position.sort_order>0
-       AND (
-         NOT EXISTS (SELECT 1 FROM organization_positions WHERE level<>1)
-         OR NOT EXISTS (SELECT 1 FROM organization_positions WHERE level<>sort_order)
-       )`
-  );
-  await pool.query(
-    `UPDATE organization_positions
-     SET level = CASE name
-       WHEN 'Chief Executive Officer' THEN 1
-       WHEN 'President' THEN 2
-       WHEN 'Vice President' THEN 3
-       WHEN 'Senior Manager' THEN 4
-       WHEN 'Area Manager' THEN 5
-       WHEN 'Department Manager' THEN 6
-       WHEN 'Department Supervisor' THEN 7
-       WHEN 'Rank and File' THEN 8
-       ELSE level END
-     WHERE name IN ('Chief Executive Officer','President','Vice President','Senior Manager',
-                    'Area Manager','Department Manager','Department Supervisor','Rank and File')`
-  );
-  await pool.query(
-    `CREATE TABLE IF NOT EXISTS organization_assignments (
-       id BIGSERIAL PRIMARY KEY,
-       employee_id BIGINT NOT NULL REFERENCES employee_profiles(id) ON DELETE CASCADE,
-       unit_id BIGINT NOT NULL REFERENCES organization_departments(id) ON DELETE RESTRICT,
-       position_id BIGINT NOT NULL REFERENCES organization_positions(id) ON DELETE RESTRICT,
-       manager_employee_id BIGINT REFERENCES employee_profiles(id) ON DELETE RESTRICT,
-       effective_from DATE NOT NULL DEFAULT CURRENT_DATE,
-       effective_to DATE,
-       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-       CHECK (manager_employee_id IS NULL OR manager_employee_id <> employee_id),
-       CHECK (effective_to IS NULL OR effective_to >= effective_from)
-     )`
-  );
-  await pool.query('DROP INDEX IF EXISTS organization_assignments_one_current_idx');
-  await pool.query('CREATE UNIQUE INDEX IF NOT EXISTS organization_assignments_one_current_unit_idx ON organization_assignments (employee_id, unit_id) WHERE effective_to IS NULL');
-  await pool.query('CREATE INDEX IF NOT EXISTS organization_assignments_unit_idx ON organization_assignments (unit_id) WHERE effective_to IS NULL');
-  await pool.query('CREATE INDEX IF NOT EXISTS organization_assignments_manager_idx ON organization_assignments (manager_employee_id) WHERE effective_to IS NULL');
-  await pool.query(`CREATE TABLE IF NOT EXISTS organization_assignment_managers (
-    assignment_id BIGINT NOT NULL REFERENCES organization_assignments(id) ON DELETE CASCADE,
-    manager_employee_id BIGINT NOT NULL REFERENCES employee_profiles(id) ON DELETE RESTRICT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (assignment_id, manager_employee_id)
-  )`);
-  await pool.query('CREATE INDEX IF NOT EXISTS organization_assignment_managers_manager_idx ON organization_assignment_managers (manager_employee_id)');
-  await pool.query(`INSERT INTO organization_assignment_managers (assignment_id, manager_employee_id)
-    SELECT id, manager_employee_id FROM organization_assignments WHERE manager_employee_id IS NOT NULL ON CONFLICT DO NOTHING`);
-  await pool.query(
-    `INSERT INTO organization_assignments (employee_id, unit_id, position_id, effective_from)
-     SELECT employee.id, unit.id, position.id, COALESCE(employee.hire_date, CURRENT_DATE)
-     FROM employee_profiles employee
-     JOIN organization_departments unit ON LOWER(unit.name)=LOWER(NULLIF(TRIM(employee.department), ''))
-     JOIN organization_positions position ON LOWER(position.name)=LOWER(NULLIF(TRIM(employee.job_title), ''))
-     WHERE NOT EXISTS (
-       SELECT 1 FROM organization_assignments assignment
-       WHERE assignment.employee_id=employee.id AND assignment.effective_to IS NULL
-     )
-     ON CONFLICT DO NOTHING`
-  );
+  if (!organizationSchemaReady) {
+    organizationSchemaReady = pool.query(
+      "SELECT " +
+      "EXISTS (SELECT 1 FROM information_schema.tables " +
+      "WHERE table_schema = current_schema() AND table_name = 'organization_departments') AS departments, " +
+      "EXISTS (SELECT 1 FROM information_schema.tables " +
+      "WHERE table_schema = current_schema() AND table_name = 'organization_positions') AS positions, " +
+      "EXISTS (SELECT 1 FROM information_schema.tables " +
+      "WHERE table_schema = current_schema() AND table_name = 'organization_assignments') AS assignments, " +
+      "EXISTS (SELECT 1 FROM information_schema.tables " +
+      "WHERE table_schema = current_schema() AND table_name = 'organization_assignment_managers') AS assignment_managers"
+    ).then((result) => {
+      const tables = result.rows[0] || {};
+      const missing = Object.entries(tables)
+        .filter(([, present]) => !present)
+        .map(([name]) => name.replace('_', ' '));
+      if (missing.length) {
+        throw Object.assign(
+          new Error('Organization data is unavailable. Run the database migrations and try again.'),
+          { status:503 }
+        );
+      }
+    }).catch((error) => {
+      organizationSchemaReady = null;
+      throw error;
+    });
+  }
+  return organizationSchemaReady;
 }
 
 function departmentInput(body = {}) {
@@ -156,10 +67,16 @@ organizationRouter.get('/departments', ...requirePermission('organization', 'vie
     await ensureOrganizationSchema();
     const result = await pool.query(
       `SELECT unit.id, unit.name, unit.description, unit.parent_id AS "parentId", unit.unit_type AS "unitType",
-              COUNT(assignment.id)::INTEGER AS "memberCount",
+              COUNT(DISTINCT member.id)::INTEGER AS "memberCount",
               unit.created_at AS "createdAt", unit.updated_at AS "updatedAt"
        FROM organization_departments unit
-       LEFT JOIN organization_assignments assignment ON assignment.unit_id=unit.id AND assignment.effective_to IS NULL
+       LEFT JOIN organization_assignments assignment
+         ON assignment.unit_id=unit.id
+         AND assignment.effective_from<=CURRENT_DATE
+         AND (assignment.effective_to IS NULL OR assignment.effective_to>=CURRENT_DATE)
+       LEFT JOIN employee_profiles member
+         ON member.id=assignment.employee_id
+         AND member.employment_status='active'
        GROUP BY unit.id ORDER BY unit.name`
     );
     return response.json({ departments:result.rows });
@@ -339,7 +256,9 @@ organizationRouter.get('/assignments', ...requirePermission('organization', 'vie
          JOIN organization_positions position ON position.id=assignment.position_id
          LEFT JOIN organization_assignment_managers manager_link ON manager_link.assignment_id=assignment.id
          LEFT JOIN employee_profiles manager ON manager.id=manager_link.manager_employee_id
-         WHERE assignment.employee_id=employee.id AND assignment.effective_to IS NULL
+         WHERE assignment.employee_id=employee.id
+           AND assignment.effective_from<=CURRENT_DATE
+           AND (assignment.effective_to IS NULL OR assignment.effective_to>=CURRENT_DATE)
        ) current_assignment ON TRUE
        WHERE employee.employment_status='active'
        ORDER BY employee.last_name, employee.first_name`
@@ -376,86 +295,25 @@ organizationRouter.put('/assignments/:employeeId', ...requirePermission('organiz
   const positionId = String(request.body?.positionId || '');
   const managerEmployeeIds = [...new Set((Array.isArray(request.body?.managerEmployeeIds) ? request.body.managerEmployeeIds : [request.body?.managerEmployeeId]).filter(Boolean).map(String))];
   const effectiveFrom = String(request.body?.effectiveFrom || '');
-  if (!unitIds.length || unitIds.some((id)=>!isPositiveInteger(id)) || !isPositiveInteger(positionId)) return response.status(400).json({ error:'Select at least one valid team and a position.' });
-  if (managerEmployeeIds.some((id)=>!isPositiveInteger(id))) return response.status(400).json({ error:'Select valid direct managers.' });
-  if (managerEmployeeIds.includes(String(request.params.employeeId))) return response.status(400).json({ error:'An employee cannot report to themselves.' });
-  if (!isIsoDate(effectiveFrom)) return response.status(400).json({ error:'Select a valid effective date.' });
+  if (!effectiveFrom || !isIsoDate(effectiveFrom)) return response.status(400).json({ error:'Select a valid effective date.' });
   const client = await pool.connect();
+  let transactionStarted = false;
   try {
     await ensureOrganizationSchema();
     await client.query('BEGIN');
-    const [employee, units, position] = await Promise.all([
-      client.query("SELECT id FROM employee_profiles WHERE id=$1 AND employment_status='active'", [request.params.employeeId]),
-      client.query('SELECT id, name FROM organization_departments WHERE id=ANY($1::bigint[]) ORDER BY name', [unitIds]),
-      client.query('SELECT id, name, level FROM organization_positions WHERE id=$1', [positionId])
-    ]);
-    if (!employee.rowCount || units.rowCount!==unitIds.length || !position.rowCount) {
-      await client.query('ROLLBACK');
-      return response.status(400).json({ error:'The employee, one of the teams, or the position is no longer available.' });
-    }
-    if (managerEmployeeIds.length) {
-      const managers = await client.query(
-        `SELECT assignment.employee_id::text AS id, MIN(position.level) AS level
-         FROM organization_assignments assignment
-         JOIN organization_positions position ON position.id=assignment.position_id
-         JOIN employee_profiles employee ON employee.id=assignment.employee_id AND employee.employment_status='active'
-         WHERE assignment.employee_id=ANY($1::bigint[]) AND assignment.effective_to IS NULL
-         GROUP BY assignment.employee_id`, [managerEmployeeIds]
-      );
-      if (managers.rowCount!==managerEmployeeIds.length) {
-        await client.query('ROLLBACK');
-        return response.status(400).json({ error:'Every selected manager needs an active organization assignment.' });
-      }
-      if (managers.rows.some((manager)=>Number(manager.level)>=Number(position.rows[0].level))) {
-        await client.query('ROLLBACK');
-        return response.status(400).json({ error:'Every direct manager must hold a more senior position level.' });
-      }
-      const cycle = await client.query(
-        `WITH RECURSIVE reporting_chain(employee_id) AS (
-           SELECT UNNEST($1::bigint[])
-           UNION
-           SELECT manager_link.manager_employee_id
-           FROM reporting_chain chain
-           JOIN organization_assignments assignment ON assignment.employee_id=chain.employee_id AND assignment.effective_to IS NULL
-           JOIN organization_assignment_managers manager_link ON manager_link.assignment_id=assignment.id
-         ) SELECT 1 FROM reporting_chain WHERE employee_id=$2 LIMIT 1`,
-        [managerEmployeeIds, request.params.employeeId]
-      );
-      if (cycle.rowCount) {
-        await client.query('ROLLBACK');
-        return response.status(400).json({ error:'Those manager selections would create a circular reporting line.' });
-      }
-    }
-    const current = await client.query('SELECT id, effective_from::text FROM organization_assignments WHERE employee_id=$1 AND effective_to IS NULL FOR UPDATE', [request.params.employeeId]);
-    for (const assignment of current.rows) {
-      if (String(assignment.effective_from).slice(0,10)>=effectiveFrom) await client.query('DELETE FROM organization_assignments WHERE id=$1', [assignment.id]);
-      else await client.query("UPDATE organization_assignments SET effective_to=$1::date-1, updated_at=NOW() WHERE id=$2", [effectiveFrom, assignment.id]);
-    }
-    const primaryManagerId = managerEmployeeIds[0] || null;
-    const assignmentIds = [];
-    for (const unitId of unitIds) {
-      const inserted = await client.query(
-        `INSERT INTO organization_assignments (employee_id, unit_id, position_id, manager_employee_id, effective_from)
-         VALUES ($1,$2,$3,$4,$5) RETURNING id`,
-        [request.params.employeeId, unitId, positionId, primaryManagerId, effectiveFrom]
-      );
-      assignmentIds.push(inserted.rows[0].id);
-      for (const managerId of managerEmployeeIds) {
-        await client.query('INSERT INTO organization_assignment_managers (assignment_id, manager_employee_id) VALUES ($1,$2)', [inserted.rows[0].id, managerId]);
-      }
-    }
-    const departmentNames = units.rows.map((unit)=>unit.name).join(', ');
-    await client.query('UPDATE employee_profiles SET department=$1, job_title=$2, updated_at=NOW() WHERE id=$3', [departmentNames, position.rows[0].name, request.params.employeeId]);
-    await client.query(
-      `UPDATE employee_leave_requests
-       SET approver_employee_id=$1, routed_at=CASE WHEN $1::bigint IS NULL THEN NULL ELSE NOW() END, updated_at=NOW()
-       WHERE employee_id=$2 AND status='pending'`,
-      [primaryManagerId, request.params.employeeId]
-    );
+    transactionStarted = true;
+    const assignment = await replaceCurrentOrganizationAssignment(client, {
+      employeeId:request.params.employeeId,
+      unitIds,
+      positionId,
+      managerEmployeeIds,
+      effectiveFrom
+    });
     await client.query('COMMIT');
-    return response.json({ assignment:{ employeeId:request.params.employeeId, assignmentIds, unitIds, positionId, managerEmployeeIds, effectiveFrom } });
+    transactionStarted = false;
+    return response.json({ assignment });
   } catch (error) {
-    await client.query('ROLLBACK');
+    if (transactionStarted) await client.query('ROLLBACK');
     return next(error);
   } finally { client.release(); }
 });

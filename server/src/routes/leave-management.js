@@ -2,6 +2,12 @@ import { Router } from 'express';
 import { pool } from '../db/pool.js';
 import { requirePermission } from '../auth/authorization.js';
 import { isLeaveBalance, isPositiveInteger } from '../validation.js';
+import {
+  currentDepartmentSql,
+  currentJobTitleSql,
+  currentOrganizationJoin
+} from '../organization/current-organization-query.js';
+import { ensureOrganizationSchema } from './organization.js';
 
 export const leaveManagementRouter = Router();
 const balanceColumnByLeaveType = {
@@ -12,22 +18,25 @@ const balanceColumnByLeaveType = {
 
 leaveManagementRouter.get('/employees', ...requirePermission('leave_management', 'view'), async (request, response, next) => {
   try {
+    await ensureOrganizationSchema();
     const search = String(request.query.search || '').trim();
     const pattern = `%${search}%`;
     const result = await pool.query(
       `SELECT employee.id, employee.employee_number AS "employeeNumber",
               employee.first_name AS "firstName", employee.last_name AS "lastName",
               employee.preferred_name AS "preferredName", employee.email,
-              employee.job_title AS "jobTitle",
+              ${currentJobTitleSql} AS "jobTitle", ${currentDepartmentSql} AS department,
               COALESCE(balance.vacation_leave, 0)::double precision AS "vacationLeave",
               COALESCE(balance.sick_leave, 0)::double precision AS "sickLeave",
               COALESCE(balance.emergency_leave, 0)::double precision AS "emergencyLeave"
        FROM employee_profiles employee
+       ${currentOrganizationJoin}
        LEFT JOIN employee_leave_balances balance ON balance.employee_id = employee.id
        WHERE employee.employment_status = 'active'
          AND ($1 = '' OR employee.employee_number ILIKE $2 OR employee.first_name ILIKE $2
            OR employee.last_name ILIKE $2 OR employee.preferred_name ILIKE $2
-           OR employee.email ILIKE $2 OR employee.job_title ILIKE $2)
+           OR employee.email ILIKE $2 OR ${currentJobTitleSql} ILIKE $2
+           OR ${currentDepartmentSql} ILIKE $2)
        ORDER BY employee.last_name, employee.first_name`,
       [search, pattern]
     );

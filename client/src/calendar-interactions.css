@@ -1,0 +1,30 @@
+/* Accessible Calendar interaction refinements. */
+time.calendar-day-number{display:grid;place-items:center;cursor:default;font-style:normal}
+button.calendar-day-number{cursor:pointer}
+
+.calendar-series-note{margin:0;padding:.68rem 1.1rem;border-bottom:1px solid #e0e7e8;color:#596f7f;background:#f1f5f6;font-size:.58rem;line-height:1.45}
+.calendar-day-items-list{padding:.7rem 1.1rem;display:grid;gap:.5rem}
+.calendar-day-items-list-entry{min-height:58px;padding:.65rem .75rem;display:grid;grid-template-columns:30px minmax(0,1fr) auto;align-items:center;gap:.65rem;border:1px solid #dce4e6;border-radius:5px;color:var(--navy);background:#fff;text-align:left;cursor:pointer}
+.calendar-day-items-list-entry:hover{border-color:#c7d4d8;background:#fbfcfc}
+.calendar-day-items-list-entry>i{width:28px;height:28px;display:grid;place-items:center;border-radius:50%;color:#a56d49;background:#f4e6da;font-size:.62rem;font-style:normal}
+.calendar-day-items-list-entry.event>i{color:#52788f;background:#e5eef3}
+.calendar-day-items-list-entry>span{min-width:0;display:flex;flex-direction:column}
+.calendar-day-items-list-entry strong{overflow:hidden;font-size:.66rem;text-overflow:ellipsis;white-space:nowrap}
+.calendar-day-items-list-entry small{margin-top:.14rem;overflow:hidden;color:#83929d;font-size:.54rem;text-overflow:ellipsis;white-space:nowrap}
+.calendar-day-items-list-entry em{color:var(--copper);font-size:.52rem;font-style:normal;font-weight:700}
+.calendar-day-items-list-entry.cancelled{opacity:.58}
+
+@media(max-width:460px){
+  .calendar-day{min-height:112px;padding:.25rem}
+  .calendar-day-items{gap:3px;margin-top:.2rem}
+  .calendar-item{min-height:26px;height:auto;padding:.14rem .16rem;display:grid;border-radius:3px;font-size:.42rem;line-height:1.15}
+  .calendar-item i,.calendar-item span{display:block}
+  .calendar-item i{font-size:.4rem}
+  .calendar-item span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .calendar-more{min-height:24px;padding:.1rem .16rem;font-size:.47rem}
+  .calendar-series-note{padding-left:.85rem;padding-right:.85rem}
+  .calendar-day-items-list{padding-left:.85rem;padding-right:.85rem}
+  .calendar-day-items-list-entry{grid-template-columns:26px minmax(0,1fr);gap:.5rem}
+  .calendar-day-items-list-entry>i{width:24px;height:24px}
+  .calendar-day-items-list-entry em{display:none}
+}

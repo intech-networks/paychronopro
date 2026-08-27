@@ -9,6 +9,8 @@
     "build": "npm run build -w client",
     "start": "npm run start -w server",
     "db:migrate": "npm run db:migrate -w server",
+    "db:audit": "npm run db:audit -w server",
+    "smoke:payroll": "npm run smoke:payroll -w server",
     "test": "npm run test -w server",
     "check": "npm run check -w server && npm test && npm run build"
   },

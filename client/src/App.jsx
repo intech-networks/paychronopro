@@ -1,9 +1,14 @@
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import './tax.css';
 import './payroll-tax.css';
 import './payroll-workspace.css';
 import './exemption-report.css';
 import './payout.css';
+import './calendar.css';
+import './calendar-interactions.css';
+import './company-profile.css';
+import { CalendarModule, UpcomingCalendarCard } from './CalendarModule.jsx';
+import { CompanyProfile } from './CompanyProfile.jsx';
 
 const DeviceUsersModuleContext = createContext(false);
 const administratorHiddenModuleKeys = new Set(['leave_application', 'overtime_request', 'shift_change']);
@@ -142,12 +147,35 @@ function Dashboard() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeModule, setActiveModule] = useState('overview');
+  const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
   const [setupOpen, setSetupOpen] = useState(true);
   const [workforceOpen, setWorkforceOpen] = useState(true);
   const [maintenanceOpen, setMaintenanceOpen] = useState(true);
   const [utilitiesOpen, setUtilitiesOpen] = useState(true);
   const [timeTrackingOpen, setTimeTrackingOpen] = useState(true);
   const [payrollOpen, setPayrollOpen] = useState(true);
+  const mobileNavigationToggleRef = useRef(null);
+  const mobileNavigationCloseRef = useRef(null);
+  const dashboardMainRef = useRef(null);
+
+  function isMobileNavigationViewport() {
+    return window.matchMedia?.('(max-width: 720px)').matches;
+  }
+
+  function closeMobileNavigation({ restoreToggleFocus = false, focusMain = false } = {}) {
+    setMobileNavigationOpen(false);
+    if (!isMobileNavigationViewport()) return;
+    window.requestAnimationFrame(() => {
+      if (focusMain) dashboardMainRef.current?.focus();
+      else if (restoreToggleFocus) mobileNavigationToggleRef.current?.focus();
+    });
+  }
+
+  function openMobileNavigation() {
+    if (!isMobileNavigationViewport()) return;
+    setMobileNavigationOpen(true);
+    window.requestAnimationFrame(() => mobileNavigationCloseRef.current?.focus());
+  }
 
   useEffect(() => {
     fetch('/api/auth/me')
@@ -185,6 +213,27 @@ function Dashboard() {
     try { window.localStorage.setItem('paytimepro.activeModule', activeModule); } catch {}
   }, [activeModule, user]);
 
+  useEffect(() => {
+    if (!mobileNavigationOpen) return undefined;
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeMobileNavigation({ restoreToggleFocus: true });
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [mobileNavigationOpen]);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(max-width: 720px)');
+    const closeOnDesktop = (event) => {
+      if (!event.matches) setMobileNavigationOpen(false);
+    };
+    mediaQuery.addEventListener('change', closeOnDesktop);
+    return () => mediaQuery.removeEventListener('change', closeOnDesktop);
+  }, []);
+
   if (loading) return <div className="session-loading">Loading your session…</div>;
   const initials = user.displayName.split(/\s+/).map((part) => part[0]).slice(0, 2).join('').toUpperCase();
   const canView = (moduleKey) => Boolean(effectiveModulePermission(user,moduleKey)?.view);
@@ -203,14 +252,18 @@ function Dashboard() {
   ].filter(([moduleKey]) => canView(moduleKey));
   const navItems = [
     ['overview', '⌂', 'Overview'],
+    ['calendar', '▣', 'Calendar'],
     ['reports', '▤', 'Reports']
   ].filter(([moduleKey]) => canView(moduleKey));
 
   return (
     <div className="dashboard-shell">
-      <aside className="sidebar">
+      <aside className={`sidebar${mobileNavigationOpen ? ' sidebar-open' : ''}`} id="dashboard-sidebar">
+        <button className="mobile-sidebar-close" type="button" ref={mobileNavigationCloseRef} onClick={() => closeMobileNavigation({ restoreToggleFocus: true })} aria-label="Close navigation"><span aria-hidden="true">×</span></button>
         <Logo />
-        <nav aria-label="Dashboard navigation">
+        <nav aria-label="Dashboard navigation" onClick={(event) => {
+          if (event.target.closest('button')) closeMobileNavigation({ focusMain: true });
+        }}>
           {navItems.slice(0, 1).map(([moduleKey, icon, label]) => <button className={activeModule === moduleKey ? 'active' : ''} type="button" key={moduleKey} onClick={() => setActiveModule(moduleKey)}><span>{icon}</span>{label}</button>)}
           {canView('workforce_module') && workforceItems.length > 0 && <div className="sidebar-nav-group">
             <button className={activeModule === 'workforce_module' || workforceItems.some(([moduleKey]) => moduleKey === activeModule) ? 'active group-active' : ''} type="button" onClick={() => { setWorkforceOpen((current) => !current); setActiveModule('workforce_module'); }} aria-expanded={workforceOpen}><span>♙</span>Workforce<b>{workforceOpen ? '⌃' : '⌄'}</b></button>
@@ -224,7 +277,7 @@ function Dashboard() {
             <button className={['time_tracking', 'time_entries', 'exemption_report', 'requests', 'leave_application', 'overtime_request', 'shift_change'].includes(activeModule) ? 'active group-active' : ''} type="button" onClick={() => { setTimeTrackingOpen((current) => !current); setActiveModule('time_tracking'); }} aria-expanded={timeTrackingOpen}><span>◷</span>Timetracking<b>{timeTrackingOpen ? '⌃' : '⌄'}</b></button>
             {timeTrackingOpen && <div className="sidebar-subnav">{canView('time_entries')&&<button className={activeModule === 'time_entries' ? 'active' : ''} type="button" onClick={() => setActiveModule('time_entries')}><span>•</span>Time Entries</button>}{canView('exemption_report')&&<button className={activeModule === 'exemption_report' ? 'active' : ''} type="button" onClick={() => setActiveModule('exemption_report')}><span>•</span>Exemption Report</button>}{canView('requests')&&<button className={activeModule === 'requests' ? 'active' : ''} type="button" onClick={() => setActiveModule('requests')}><span>•</span>Requests</button>}{canView('leave_application')&&<button className={activeModule === 'leave_application' ? 'active' : ''} type="button" onClick={() => setActiveModule('leave_application')}><span>•</span>Leave Application</button>}{canView('overtime_request')&&<button className={activeModule === 'overtime_request' ? 'active' : ''} type="button" onClick={() => setActiveModule('overtime_request')}><span>•</span>Overtime Request</button>}{canView('shift_change')&&<button className={activeModule === 'shift_change' ? 'active' : ''} type="button" onClick={() => setActiveModule('shift_change')}><span>•</span>Shift Change</button>}</div>}
           </div>}
-          {canView('payroll') && (canView('payroll_setup')||canView('tax_configuration')) && <div className="sidebar-nav-group">
+          {canView('payroll') && (canView('payroll_setup')||canView('tax_configuration')||canView('payout_view')) && <div className="sidebar-nav-group">
             <button className={['payroll','payroll_setup','payroll_tax','tax_configuration','payout_view'].includes(activeModule) ? 'active group-active' : ''} type="button" onClick={() => { setPayrollOpen((current) => !current); setActiveModule('payroll'); }} aria-expanded={payrollOpen}><span>$</span>Payroll<b>{payrollOpen ? '⌃' : '⌄'}</b></button>
             {payrollOpen&&<div className="sidebar-subnav">{canView('payroll_setup')&&<button className={activeModule==='payroll_setup'?'active':''} type="button" onClick={()=>setActiveModule('payroll_setup')}><span>•</span>Salary Setup</button>}{canView('tax_configuration')&&<button className={activeModule==='tax_configuration'?'active':''} type="button" onClick={()=>setActiveModule('tax_configuration')}><span>•</span>Tax Configuration</button>}{canView('payroll_setup')&&<button className={activeModule==='payroll_tax'?'active':''} type="button" onClick={()=>setActiveModule('payroll_tax')}><span>•</span>Tax Calculator</button>}{canView('payout_view')&&<button className={activeModule==='payout_view'?'active':''} type="button" onClick={()=>setActiveModule('payout_view')}><span>•</span>Payout View</button>}</div>}
           </div>}
@@ -235,24 +288,27 @@ function Dashboard() {
           </div>}
         </nav>
       </aside>
+      {mobileNavigationOpen && <button className="sidebar-scrim" type="button" onClick={() => closeMobileNavigation({ restoreToggleFocus: true })} aria-label="Close navigation" />}
       <div className="dashboard-content">
         <header className="dashboard-topbar" aria-label="Dashboard header">
           <div className="header-user">
+            <button className="mobile-nav-toggle" type="button" ref={mobileNavigationToggleRef} onClick={openMobileNavigation} aria-expanded={mobileNavigationOpen} aria-controls="dashboard-sidebar" aria-label="Open navigation"><span aria-hidden="true">☰</span></button>
             <i>{initials}</i>
             <span><strong>{user.displayName}</strong><small>{user.role}</small></span>
             <button type="button" onClick={() => window.location.assign('/logout')} aria-label="Sign out">Sign out <b>↪</b></button>
           </div>
         </header>
-        <main className="dashboard-main" id={activeModule} aria-label={`${activeModule} module`}>
+        <main className="dashboard-main" id={activeModule} ref={dashboardMainRef} tabIndex={-1} aria-label={`${activeModule} module`}>
           {activeModule === 'overview' && <Overview user={user} onNavigate={setActiveModule} />}
+          {activeModule === 'calendar' && <CalendarModule user={user} permission={effectiveModulePermission(user,'calendar')} onConfirm={confirmModal} />}
           {activeModule === 'workforce_module' && <WorkforceModule user={user} onNavigate={setActiveModule} />}
           {activeModule === 'setup' && <Setup user={user} onNavigate={setActiveModule} />}
-          {activeModule === 'company' && <ModulePlaceholder moduleKey="company" />}
+          {activeModule === 'company' && <CompanyProfile permission={effectiveModulePermission(user,'company')} onNavigate={setActiveModule} onNotify={showModal} canViewOrganization={Boolean(effectiveModulePermission(user,'organization')?.view)} />}
           {activeModule === 'organization' && <Organization user={user} />}
           {activeModule === 'maintenance' && <Maintenance user={user} onNavigate={setActiveModule} />}
           {activeModule === 'utilities' && <Utilities user={user} onNavigate={setActiveModule} />}
           {activeModule === 'roles' && <RoleAccess user={user} />}
-          {activeModule === 'workforce' && <Workforce user={user} />}
+          {activeModule === 'workforce' && <Workforce user={user} onNavigate={setActiveModule} />}
           {activeModule === 'leave_management' && <LeaveManagement user={user} />}
           {activeModule === 'time_tracking' && <Timetracking user={user} onNavigate={setActiveModule} />}
           {activeModule === 'time_entries' && <TimeEntries user={user} />}
@@ -276,26 +332,46 @@ function Dashboard() {
 }
 
 function Overview({ user, onNavigate }) {
-  const childModuleKeys = ['maintenance','company','organization','tax_configuration','workforce','leave_management','roles','time_entries','exemption_report','shift_management','requests','leave_application','overtime_request','shift_change','scheduler','device_users','payroll_setup','payroll_tax','payout_view'];
+  const childModuleKeys = ['maintenance','company','organization','tax_configuration','workforce','leave_management','roles','time_entries','exemption_report','shift_management','requests','leave_application','overtime_request','shift_change','scheduler','device_users','payroll_setup','payroll_tax','payout_view','calendar'];
   const visibleModules = user.permissions.filter((permission) => permission.view && permission.moduleKey !== 'overview' && !childModuleKeys.includes(permission.moduleKey));
-  return <section className="overview-view"><div className="module-title"><div><span>Workspace</span><h1>Welcome, {user.displayName.split(' ')[0]}</h1><p>Choose a module to continue.</p></div></div><div className="module-grid">{visibleModules.map((permission) => <button type="button" key={permission.moduleKey} onClick={() => onNavigate(permission.moduleKey)}><strong>{permission.moduleName}</strong><span>Open module →</span></button>)}</div></section>;
+  const calendarVisible = Boolean(effectiveModulePermission(user,'calendar')?.view);
+  return <section className="overview-view"><div className="module-title"><div><span>Workspace</span><h1>Welcome, {user.displayName.split(' ')[0]}</h1><p>Choose a module to continue.</p></div></div>{calendarVisible&&<UpcomingCalendarCard onNavigate={onNavigate}/>}<div className="module-grid">{visibleModules.map((permission) => <button type="button" key={permission.moduleKey} onClick={() => onNavigate(permission.moduleKey)}><strong>{permission.moduleName}</strong><span>Open module →</span></button>)}</div></section>;
 }
 
 function Setup({ user, onNavigate }) {
   const setupModules = ['company', 'organization', 'shift_management', 'leave_management', 'roles'].map((moduleKey) => effectiveModulePermission(user,moduleKey)).filter((permission) => permission?.view);
-  return <section className="overview-view"><div className="module-title"><div><span>Configuration</span><h1>Setup</h1><p>Manage company, organization, shifts, leave, and access settings.</p></div></div><div className="module-grid">{setupModules.map((permission) => <button type="button" key={permission.moduleKey} onClick={() => onNavigate(permission.moduleKey)}><strong>{permission.moduleName}</strong><span>Open submodule â†’</span></button>)}</div></section>;
+  return <section className="overview-view"><div className="module-title"><div><span>Configuration</span><h1>Setup</h1><p>Manage company, organization, shifts, leave, and access settings.</p></div></div><div className="module-grid">{setupModules.map((permission) => <button type="button" key={permission.moduleKey} onClick={() => onNavigate(permission.moduleKey)}><strong>{permission.moduleName}</strong><span>Open submodule →</span></button>)}</div></section>;
 }
 
-const emptyTaxConfiguration={id:null,name:'',effectiveFrom:'',effectiveTo:'',payFrequency:'monthly',isActive:true,brackets:[{lowerBound:'0',upperBound:'',baseTax:'0',ratePercent:'0'}]};
+const emptyTaxConfiguration={id:null,name:'',effectiveFrom:'',effectiveTo:'',payFrequency:'monthly',exemptionAmount:'0',isActive:true,brackets:[{lowerBound:'0',upperBound:'',baseTax:'0',ratePercent:'0'}]};
 function TaxConfiguration({user}){
   const permission=effectiveModulePermission(user,'tax_configuration');const[items,setItems]=useState([]),[form,setForm]=useState(emptyTaxConfiguration),[income,setIncome]=useState(''),[preview,setPreview]=useState(null),[message,setMessage]=useState(''),[saving,setSaving]=useState(false);
   async function load(){try{const r=await fetch('/api/tax-configurations'),d=await r.json();if(!r.ok)throw new Error(d.error);setItems(d.configurations);}catch(e){setMessage(e.message);}}
   useEffect(()=>{load();},[]);
-  function edit(item){setForm({...item,effectiveFrom:item.effectiveFrom?.slice(0,10)||'',effectiveTo:item.effectiveTo?.slice(0,10)||'',brackets:item.brackets.map(b=>({...b,upperBound:b.upperBound??''}))});setPreview(null);}
+  function edit(item){setForm({...item,exemptionAmount:item.exemptionAmount??'0',effectiveFrom:item.effectiveFrom?.slice(0,10)||'',effectiveTo:item.effectiveTo?.slice(0,10)||'',brackets:item.brackets.map(b=>({...b,upperBound:b.upperBound??''}))});setPreview(null);}
   function bracket(index,key,value){setForm(current=>({...current,brackets:current.brackets.map((b,i)=>i===index?{...b,[key]:value}:b)}));}
   async function save(e){e.preventDefault();setSaving(true);setMessage('');try{const r=await fetch(`/api/tax-configurations${form.id?`/${form.id}`:''}`,{method:form.id?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(form)}),d=await r.json();if(!r.ok)throw new Error(d.error);setMessage(d.message);setForm(emptyTaxConfiguration);await load();}catch(error){setMessage(error.message);}finally{setSaving(false);}}
-  async function calculate(){const r=await fetch('/api/tax-configurations/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({regularCompensation:income,brackets:form.brackets})}),d=await r.json();if(r.ok)setPreview(d);}
-  return <section className="tax-config-view"><div className="module-title"><div><span>Setup</span><h1>Tax Configuration</h1><p>Define effective-dated withholding brackets applied to taxable employee salary.</p></div><button type="button" onClick={()=>setForm(emptyTaxConfiguration)}>New configuration</button></div>{message&&<p className="rbac-message">{message}</p>}<div className="tax-config-layout"><aside>{items.map(item=><button type="button" className={form.id===item.id?'selected':''} key={item.id} onClick={()=>edit(item)}><strong>{item.name}</strong><small>{item.payFrequency.replace('_',' ')} · from {item.effectiveFrom?.slice(0,10)}</small><b>{item.isActive?'Active':'Inactive'}</b></button>)}{!items.length&&<p>No configurations yet.</p>}</aside><form onSubmit={save}><div className="tax-general"><label><span>Configuration name</span><input required value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="e.g. Monthly withholding 2026"/></label><label><span>Pay frequency</span><select value={form.payFrequency} onChange={e=>setForm({...form,payFrequency:e.target.value})}><option value="weekly">Weekly</option><option value="biweekly">Every two weeks</option><option value="semi_monthly">Semi-monthly</option><option value="monthly">Monthly</option></select></label><label><span>Effective from</span><input type="date" required value={form.effectiveFrom} onChange={e=>setForm({...form,effectiveFrom:e.target.value})}/></label><label><span>Effective to</span><input type="date" value={form.effectiveTo} onChange={e=>setForm({...form,effectiveTo:e.target.value})}/></label><label><span>Exemption per pay period (PHP)</span><input type="number" min="0" step=".01" value={form.exemptionAmount} onChange={e=>setForm({...form,exemptionAmount:e.target.value})}/></label><label className="tax-active"><input type="checkbox" checked={form.isActive} onChange={e=>setForm({...form,isActive:e.target.checked})}/>Active for payroll</label></div><fieldset><legend>Progressive brackets</legend><div className="tax-bracket tax-bracket-head"><span>From</span><span>Up to</span><span>Base tax</span><span>Rate on excess</span><span/></div>{form.brackets.map((b,i)=><div className="tax-bracket" key={i}><input type="number" min="0" step=".01" required value={b.lowerBound} onChange={e=>bracket(i,'lowerBound',e.target.value)}/><input type="number" min="0" step=".01" value={b.upperBound} placeholder="No limit" onChange={e=>bracket(i,'upperBound',e.target.value)}/><input type="number" min="0" step=".01" required value={b.baseTax} onChange={e=>bracket(i,'baseTax',e.target.value)}/><input type="number" min="0" max="100" step=".001" required value={b.ratePercent} onChange={e=>bracket(i,'ratePercent',e.target.value)}/><button type="button" onClick={()=>setForm({...form,brackets:form.brackets.filter((_,index)=>index!==i)})}>×</button></div>)}<button className="add-tax-bracket" type="button" onClick={()=>setForm({...form,brackets:[...form.brackets,{lowerBound:'',upperBound:'',baseTax:'0',ratePercent:'0'}]})}>+ Add bracket</button></fieldset><div className="tax-preview"><label><span>Test salary (PHP)</span><input type="number" min="0" value={income} onChange={e=>setIncome(e.target.value)}/></label><button type="button" onClick={calculate}>Preview tax</button>{preview&&<span>Taxable: <b>₱{Number(preview.taxableIncome).toLocaleString()}</b> · Withholding: <b>₱{Number(preview.tax).toLocaleString()}</b></span>}</div><button className="save-tax" disabled={saving||!(form.id?permission?.update:permission?.create)}>{saving?'Saving…':'Save tax configuration'}</button></form></div></section>;
+  async function calculate() {
+    try {
+      const response = await fetch('/api/tax-configurations/preview', {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json' },
+        body:JSON.stringify({
+          regularCompensation:income,
+          exemptionAmount:form.exemptionAmount,
+          payFrequency:form.payFrequency,
+          brackets:form.brackets
+        })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Unable to preview tax.');
+      setPreview(data);
+    } catch (error) {
+      setPreview(null);
+      setMessage(error.message);
+    }
+  }
+  return <section className="tax-config-view"><div className="module-title"><div><span>Setup</span><h1>Tax Configuration</h1><p>Define effective-dated withholding brackets applied to taxable employee salary.</p></div><button type="button" onClick={()=>setForm(emptyTaxConfiguration)}>New configuration</button></div>{message&&<p className="rbac-message">{message}</p>}<div className="tax-config-layout"><aside>{items.map(item=><button type="button" className={form.id===item.id?'selected':''} key={item.id} onClick={()=>edit(item)}><strong>{item.name}</strong><small>{item.payFrequency.replace('_',' ')} · from {item.effectiveFrom?.slice(0,10)}</small><b>{item.isActive?'Active':'Inactive'}</b></button>)}{!items.length&&<p>No configurations yet.</p>}</aside><form onSubmit={save}><div className="tax-general"><label><span>Configuration name</span><input required value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="Monthly withholding for 2026"/></label><label><span>Pay frequency</span><select value={form.payFrequency} onChange={e=>setForm({...form,payFrequency:e.target.value})}><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="semi_monthly">Semi-monthly</option><option value="monthly">Monthly</option></select></label><label><span>Effective from</span><input type="date" required value={form.effectiveFrom} onChange={e=>setForm({...form,effectiveFrom:e.target.value})}/></label><label><span>Effective to</span><input type="date" value={form.effectiveTo} onChange={e=>setForm({...form,effectiveTo:e.target.value})}/></label><label><span>Exemption per pay period (PHP)</span><input type="number" min="0" step=".01" value={form.exemptionAmount} onChange={e=>setForm({...form,exemptionAmount:e.target.value})}/></label><label className="tax-active"><input type="checkbox" checked={form.isActive} onChange={e=>setForm({...form,isActive:e.target.checked})}/>Active for payroll</label></div><fieldset><legend>Progressive brackets</legend><div className="tax-bracket tax-bracket-head"><span>From</span><span>Up to</span><span>Base tax</span><span>Rate on excess</span><span/></div>{form.brackets.map((b,i)=><div className="tax-bracket" key={i}><input type="number" min="0" step=".01" required value={b.lowerBound} onChange={e=>bracket(i,'lowerBound',e.target.value)}/><input type="number" min="0" step=".01" value={b.upperBound} placeholder="No limit" onChange={e=>bracket(i,'upperBound',e.target.value)}/><input type="number" min="0" step=".01" required value={b.baseTax} onChange={e=>bracket(i,'baseTax',e.target.value)}/><input type="number" min="0" max="100" step=".001" required value={b.ratePercent} onChange={e=>bracket(i,'ratePercent',e.target.value)}/><button type="button" onClick={()=>setForm({...form,brackets:form.brackets.filter((_,index)=>index!==i)})}>×</button></div>)}<button className="add-tax-bracket" type="button" onClick={()=>setForm({...form,brackets:[...form.brackets,{lowerBound:'',upperBound:'',baseTax:'0',ratePercent:'0'}]})}>+ Add bracket</button></fieldset><div className="tax-preview"><label><span>Test salary (PHP)</span><input type="number" min="0" value={income} onChange={e=>setIncome(e.target.value)}/></label><button type="button" onClick={calculate}>Preview tax</button>{preview&&<span>Taxable: <b>₱{Number(preview.taxableIncome).toLocaleString()}</b> · Withholding: <b>₱{Number(preview.tax).toLocaleString()}</b></span>}</div><button className="save-tax" disabled={saving||!(form.id?permission?.update:permission?.create)}>{saving?'Saving…':'Save tax configuration'}</button></form></div></section>;
 }
 
 const emptyOrganizationDepartment = { name:'', description:'' };
@@ -440,7 +516,7 @@ function OrganizationPositions({ permission }) {
     } catch (error) { setMessage(error.message); await loadPositions(); }
   }
 
-  return <div className="organization-positions"><div className="organization-section-heading"><div><span>Workforce structure</span><h2>Employee Positions</h2><p>Set explicit hierarchy levels; Level 1 is the most senior.</p></div>{permission?.create&&<button type="button" onClick={openCreate}>+ Add position</button>}</div><div className="department-table"><div className="department-row department-head"><span>Position</span><span>Description</span><span>Level</span><span>Actions</span></div>{positions.map((position)=><div className="department-row draggable-position" key={position.id}><strong>{position.name}</strong><span>{position.description||'No description'}</span><span>Level {position.level||1}</span><div className="organization-department-actions">{permission?.update&&<button className="edit" type="button" onClick={()=>openEdit(position)} aria-label={`Edit ${position.name}`} title="Edit position">{'\u270E'}</button>}{permission?.delete&&<button className="delete" type="button" onClick={()=>deletePosition(position)} aria-label={`Delete ${position.name}`} title="Delete position">{'\u2715'}</button>}</div></div>)}{loading&&<div className="empty-departments"><strong>Loading positions…</strong></div>}{!loading&&!positions.length&&<div className="empty-departments"><strong>No employee positions added</strong><small>Add the first position to begin.</small></div>}</div>{editor&&<div className="employee-modal" role="dialog" aria-modal="true" aria-labelledby="organization-position-title"><button className="modal-scrim" type="button" onClick={()=>setEditor(null)} aria-label="Close" /><div className="employee-editor department-editor"><div className="editor-header"><div><span>Organization</span><h2 id="organization-position-title">{editor.mode==='edit'?'Edit employee position':'Add employee position'}</h2></div><button type="button" onClick={()=>setEditor(null)} aria-label="Close">×</button></div><form className="department-form" onSubmit={savePosition}><div className="department-form-grid"><label><span>Position name *</span><input name="name" value={form.name} onChange={(event)=>setForm((current)=>({...current,name:event.target.value}))} maxLength="120" required /></label><label><span>Hierarchy level *</span><input type="number" min="1" max="100" value={form.level} onChange={(event)=>setForm((current)=>({...current,level:Number(event.target.value)}))} required /></label><label><span>Description</span><textarea name="description" value={form.description} onChange={(event)=>setForm((current)=>({...current,description:event.target.value}))} maxLength="1000" rows="4" /></label></div><button className="form-save" type="submit" disabled={saving}>{saving?'Saving…':'Save position'}</button></form><div className="editor-actions"><span /><button className="secondary-action" type="button" onClick={()=>setEditor(null)}>Cancel</button></div></div></div>}</div>;
+  return <div className="organization-positions"><div className="organization-section-heading"><div><span>Workforce structure</span><h2>Employee Positions</h2><p>Set explicit hierarchy levels; Level 1 is the most senior. Drag a row to reorder.</p></div>{permission?.create&&<button type="button" onClick={openCreate}>+ Add position</button>}</div><div className="department-table"><div className="department-row department-head"><span>Position</span><span>Description</span><span>Level</span><span>Actions</span></div>{positions.map((position)=><div className="department-row draggable-position" key={position.id} draggable={Boolean(permission?.update)} onDragStart={()=>setDraggingId(position.id)} onDragOver={(event)=>event.preventDefault()} onDrop={()=>movePosition(position.id)} onDragEnd={()=>setDraggingId(null)}><strong>{position.name}</strong><span>{position.description||'No description'}</span><span>Level {position.level||1}</span><div className="organization-department-actions">{permission?.update&&<button className="edit" type="button" onClick={()=>openEdit(position)} aria-label={`Edit ${position.name}`} title="Edit position">{'\u270E'}</button>}{permission?.delete&&<button className="delete" type="button" onClick={()=>deletePosition(position)} aria-label={`Delete ${position.name}`} title="Delete position">{'\u2715'}</button>}</div></div>)}{loading&&<div className="empty-departments"><strong>Loading positions…</strong></div>}{!loading&&!positions.length&&<div className="empty-departments"><strong>No employee positions added</strong><small>Add the first position to begin.</small></div>}</div>{editor&&<div className="employee-modal" role="dialog" aria-modal="true" aria-labelledby="organization-position-title"><button className="modal-scrim" type="button" onClick={()=>setEditor(null)} aria-label="Close" /><div className="employee-editor department-editor"><div className="editor-header"><div><span>Organization</span><h2 id="organization-position-title">{editor.mode==='edit'?'Edit employee position':'Add employee position'}</h2></div><button type="button" onClick={()=>setEditor(null)} aria-label="Close">×</button></div><form className="department-form" onSubmit={savePosition}><div className="department-form-grid"><label><span>Position name *</span><input name="name" value={form.name} onChange={(event)=>setForm((current)=>({...current,name:event.target.value}))} maxLength="120" required /></label><label><span>Hierarchy level *</span><input type="number" min="1" max="100" value={form.level} onChange={(event)=>setForm((current)=>({...current,level:Number(event.target.value)}))} required /></label><label><span>Description</span><textarea name="description" value={form.description} onChange={(event)=>setForm((current)=>({...current,description:event.target.value}))} maxLength="1000" rows="4" /></label></div><button className="form-save" type="submit" disabled={saving}>{saving?'Saving…':'Save position'}</button></form><div className="editor-actions"><span /><button className="secondary-action" type="button" onClick={()=>setEditor(null)}>Cancel</button></div></div></div>}</div>;
 }
 
 function OrganizationAssignments({ permission, departments }) {
@@ -641,31 +717,325 @@ const emptyPayrollProfile={payBasis:'monthly',payFrequency:'semi_monthly',baseRa
 function PayrollSetup({ user }) {
   const permission=effectiveModulePermission(user,'payroll_setup');
   const [employees,setEmployees]=useState([]),[selected,setSelected]=useState(null),[form,setForm]=useState(emptyPayrollProfile),[search,setSearch]=useState(''),[loading,setLoading]=useState(true),[saving,setSaving]=useState(false),[message,setMessage]=useState('');
+  const selectionRequestRef=useRef(null);
   useEffect(()=>{const controller=new AbortController();setLoading(true);fetch(`/api/payroll/employees?search=${encodeURIComponent(search)}`,{signal:controller.signal}).then(async r=>{const d=await r.json();if(!r.ok)throw new Error(d.error);setEmployees(d.employees);}).catch(e=>{if(e.name!=='AbortError')setMessage(e.message);}).finally(()=>{if(!controller.signal.aborted)setLoading(false);});return()=>controller.abort();},[search]);
-  async function choose(employee){setSelected(employee);setMessage('');setLoading(true);try{const r=await fetch(`/api/payroll/employees/${employee.id}`),d=await r.json();if(!r.ok)throw new Error(d.error);setForm({...emptyPayrollProfile,...d.profile,baseRate:d.profile?.baseRate??'',standardHoursPerDay:d.profile?.standardHoursPerDay??'8',effectiveDate:d.profile?.effectiveDate?.slice(0,10)||'',components:d.components||[]});}catch(e){setMessage(e.message);}finally{setLoading(false);}}
+  async function choose(employee) {
+    selectionRequestRef.current?.abort();
+    const controller = new AbortController();
+    selectionRequestRef.current = controller;
+    setSelected(employee);
+    setForm(emptyPayrollProfile);
+    setMessage('');
+    setLoading(true);
+    try {
+      const response = await fetch(`/api/payroll/employees/${employee.id}`, { signal:controller.signal });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Unable to load payroll settings.');
+      if (selectionRequestRef.current !== controller) return;
+      setForm({
+        ...emptyPayrollProfile,
+        ...data.profile,
+        baseRate:data.profile?.baseRate ?? '',
+        standardHoursPerDay:data.profile?.standardHoursPerDay ?? '8',
+        effectiveDate:data.profile?.effectiveDate?.slice(0,10) || '',
+        components:data.components || []
+      });
+    } catch (error) {
+      if (error.name !== 'AbortError' && selectionRequestRef.current === controller) setMessage(error.message);
+    } finally {
+      if (selectionRequestRef.current === controller) setLoading(false);
+    }
+  }
+  useEffect(() => () => selectionRequestRef.current?.abort(), []);
   function updateItem(index,field,value){setForm(current=>({...current,components:current.components.map((item,i)=>i===index?{...item,[field]:value}:item)}));}
   function addItem(type){setForm(current=>({...current,components:[...current.components,{type,name:'',amount:'',calculation:'fixed',isTaxable:type==='earning',isActive:true}]}));}
-  async function save(event){event.preventDefault();setSaving(true);setMessage('');try{const r=await fetch(`/api/payroll/employees/${selected.id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(form)}),d=await r.json();if(!r.ok)throw new Error(d.error);setMessage(d.message);setEmployees(current=>current.map(e=>e.id===selected.id?{...e,baseRate:form.baseRate,payBasis:form.payBasis}:e));}catch(e){setMessage(e.message);}finally{setSaving(false);}}
+  async function save(event) {
+    event.preventDefault();
+    if (!selected || saving) return;
+    const employeeId = selected.id;
+    setSaving(true);
+    setMessage('');
+    try {
+      const response = await fetch(`/api/payroll/employees/${employeeId}`, {
+        method:'PUT',
+        headers:{ 'Content-Type':'application/json' },
+        body:JSON.stringify(form)
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Unable to save payroll settings.');
+      setMessage(data.message);
+      setEmployees((current) => current.map((employee) =>
+        employee.id === employeeId ? { ...employee, baseRate:form.baseRate, payBasis:form.payBasis } : employee
+      ));
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setSaving(false);
+    }
+  }
   return <section className="payroll-setup-view"><div className="module-title"><div><span>Payroll</span><h1>Salary Setup</h1><p>Set each employee's compensation and recurring payroll items.</p></div></div>{message&&<p className="rbac-message" role="status">{message}</p>}<div className="payroll-setup-layout"><aside className="payroll-employee-list"><label><span>Find employee</span><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Name or employee number"/></label><div>{employees.map(employee=><button type="button" className={selected?.id===employee.id?'selected':''} key={employee.id} onClick={()=>choose(employee)}><span><strong>{employee.firstName} {employee.lastName}</strong><small>{employee.employeeNumber} · {employee.jobTitle||'No position'}</small></span><b>{employee.baseRate!=null?`₱${Number(employee.baseRate).toLocaleString()}`:'Not set'}</b></button>)}</div></aside><main className="payroll-editor">{!selected?<div className="time-entry-empty-state"><strong>Choose an employee</strong><p>Select someone from the list to configure their payroll details.</p></div>:<form onSubmit={save}><div className="payroll-editor-heading"><div><span>Payroll profile</span><h2>{selected.firstName} {selected.lastName}</h2></div><button disabled={!permission?.update||saving}>{saving?'Saving…':'Save setup'}</button></div><fieldset><legend>Compensation</legend><div className="payroll-field-grid"><label><span>Pay basis</span><select value={form.payBasis} onChange={e=>setForm({...form,payBasis:e.target.value})}><option value="monthly">Monthly salary</option><option value="daily">Daily rate</option><option value="hourly">Hourly rate</option></select></label><label><span>Base {form.payBasis==='monthly'?'salary':'rate'} (PHP)</span><input type="number" min="0" step="0.01" required value={form.baseRate} onChange={e=>setForm({...form,baseRate:e.target.value})}/></label><label><span>Pay frequency</span><select value={form.payFrequency} onChange={e=>setForm({...form,payFrequency:e.target.value})}><option value="weekly">Weekly</option><option value="biweekly">Every two weeks</option><option value="semi_monthly">Semi-monthly</option><option value="monthly">Monthly</option></select></label><label><span>Standard hours/day</span><input type="number" min="0.01" max="24" step="0.25" required value={form.standardHoursPerDay} onChange={e=>setForm({...form,standardHoursPerDay:e.target.value})}/></label><label><span>Tax status</span><select value={form.taxStatus} onChange={e=>setForm({...form,taxStatus:e.target.value})}><option value="taxable">Taxable</option><option value="exempt">Tax exempt</option></select></label><label><span>Effective date</span><input type="date" value={form.effectiveDate} onChange={e=>setForm({...form,effectiveDate:e.target.value})}/></label></div></fieldset><fieldset><legend>Statutory contribution allocation</legend><div className="payroll-field-grid"><label className="tax-active"><input type="checkbox" checked={form.autoCalculateContributions&&form.payBasis==='monthly'} disabled={form.payBasis!=='monthly'} onChange={e=>setForm({...form,autoCalculateContributions:e.target.checked})}/>Automatically calculate SSS, PhilHealth, and Pag-IBIG from monthly salary</label>{form.payFrequency==='semi_monthly'&&form.autoCalculateContributions&&form.payBasis==='monthly'&&<label><span>Deduction schedule</span><select value={form.contributionDeductionSchedule} onChange={e=>setForm({...form,contributionDeductionSchedule:e.target.value})}><option value="split_evenly">Split evenly between cutoffs</option><option value="first_cutoff">Deduct on first cutoff</option><option value="second_cutoff">Deduct on second cutoff</option></select></label>}{(!form.autoCalculateContributions||form.payBasis!=='monthly')&&[['sssEmployeeShare','SSS per pay period'],['philhealthEmployeeShare','PhilHealth per pay period'],['pagibigEmployeeShare','Pag-IBIG per pay period']].map(([key,label])=><label key={key}><span>{label}</span><input type="number" min="0" step="0.01" value={form[key]} onChange={e=>setForm({...form,[key]:e.target.value})}/></label>)}</div></fieldset>{['earning','deduction'].map(type=><fieldset key={type}><legend>{type==='earning'?'Recurring earnings':'Recurring deductions'}</legend>{form.components.map((item,index)=>item.type===type&&<div className="payroll-component" key={index}><input aria-label="Name" placeholder={type==='earning'?'Allowance name':'Deduction name'} value={item.name} onChange={e=>updateItem(index,'name',e.target.value)} required/><select aria-label="Calculation" value={item.calculation} onChange={e=>updateItem(index,'calculation',e.target.value)}><option value="fixed">Fixed amount</option><option value="percentage">Percentage</option></select><input aria-label="Amount" type="number" min="0" max={item.calculation==='percentage'?'100':undefined} step="0.01" value={item.amount} onChange={e=>updateItem(index,'amount',e.target.value)} required/><label className="payroll-check"><input type="checkbox" checked={item.isTaxable} onChange={e=>updateItem(index,'isTaxable',e.target.checked)}/>Taxable</label><button type="button" onClick={()=>setForm({...form,components:form.components.filter((_,i)=>i!==index)})}>Remove</button></div>)}<button className="add-payroll-item" type="button" onClick={()=>addItem(type)}>+ Add {type}</button></fieldset>)}<label className="payroll-notes"><span>Notes</span><textarea rows="3" value={form.notes} onChange={e=>setForm({...form,notes:e.target.value})} placeholder="Internal payroll notes"/></label></form>}</main></div></section>;
 }
 
+function payoutPeriodForFrequency(frequency, referenceDate=new Date()){
+  const reference=new Date(referenceDate.getFullYear(),referenceDate.getMonth(),referenceDate.getDate());
+  let end=new Date(reference);end.setDate(end.getDate()-1);
+  let start=new Date(end);
+  if(frequency==='weekly')start.setDate(end.getDate()-6);
+  else if(frequency==='biweekly')start.setDate(end.getDate()-13);
+  else if(frequency==='monthly'){
+    end=new Date(reference.getFullYear(),reference.getMonth(),0);
+    start=new Date(end.getFullYear(),end.getMonth(),1);
+  }else{
+    if(reference.getDate()>15){
+      start=new Date(reference.getFullYear(),reference.getMonth(),1);
+      end=new Date(reference.getFullYear(),reference.getMonth(),15);
+    }else{
+      end=new Date(reference.getFullYear(),reference.getMonth(),0);
+      start=new Date(end.getFullYear(),end.getMonth(),16);
+    }
+  }
+  return{start:localDateValue(start),end:localDateValue(end),payDate:localDateValue(end)};
+}
+
 function PayoutView(){
-  const today=new Date(),day=today.getDate(),monthStart=new Date(today.getFullYear(),today.getMonth(),1),monthEnd=new Date(today.getFullYear(),today.getMonth()+1,0);
-  const [employees,setEmployees]=useState([]),[employeeId,setEmployeeId]=useState(''),[periodStart,setPeriodStart]=useState(localDateValue(day<=15?monthStart:new Date(today.getFullYear(),today.getMonth(),16))),[periodEnd,setPeriodEnd]=useState(localDateValue(day<=15?new Date(today.getFullYear(),today.getMonth(),15):monthEnd)),[payDate,setPayDate]=useState(localDateValue(today)),[result,setResult]=useState(null),[loading,setLoading]=useState(false),[error,setError]=useModalMessage('error');
-  useEffect(()=>{fetch('/api/payroll/employees').then(async response=>{const data=await response.json();if(!response.ok)throw new Error(data.error);setEmployees(data.employees||[]);if(data.employees?.length)setEmployeeId(String(data.employees[0].id));}).catch(loadError=>setError(loadError.message));},[]);
-  async function calculate(event){event.preventDefault();setLoading(true);setResult(null);try{const response=await fetch(`/api/payroll/employees/${employeeId}/payout-preview`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({periodStart,periodEnd,payDate})}),data=await response.json();if(!response.ok)throw new Error(data.error||'Unable to calculate payout.');setResult(data);setError('');}catch(calculateError){setError(calculateError.message);}finally{setLoading(false);}}
+  const initialPeriod=payoutPeriodForFrequency('semi_monthly');
+  const[employees,setEmployees]=useState([]);
+  const[employeeId,setEmployeeId]=useState('');
+  const[periodStart,setPeriodStart]=useState(initialPeriod.start);
+  const[periodEnd,setPeriodEnd]=useState(initialPeriod.end);
+  const[payDate,setPayDate]=useState(initialPeriod.payDate);
+  const[result,setResult]=useState(null);
+  const[loading,setLoading]=useState(false);
+  const[error,setError]=useModalMessage('error');
+  const payoutRequestRef=useRef(null);
+
+  const applyEmployeePeriod=(employee)=>{
+    const period=payoutPeriodForFrequency(employee?.payFrequency||'semi_monthly');
+    setPeriodStart(period.start);setPeriodEnd(period.end);setPayDate(period.payDate);
+  };
+  const invalidatePayoutPreview=()=>{
+    payoutRequestRef.current?.abort();
+    payoutRequestRef.current=null;
+    setLoading(false);setResult(null);setError('');
+  };
+  useEffect(()=>{
+    const controller=new AbortController();
+    (async()=>{
+      try{
+        const response=await fetch('/api/payroll/employees',{signal:controller.signal});
+        const data=await response.json();
+        if(!response.ok)throw new Error(data.error||'Unable to load payroll employees.');
+        const loaded=data.employees||[];
+        setEmployees(loaded);
+        if(loaded.length){setEmployeeId(String(loaded[0].id));applyEmployeePeriod(loaded[0]);}
+      }catch(loadError){if(loadError.name!=='AbortError')setError(loadError.message);}
+    })();
+    return()=>controller.abort();
+  },[]);
+  useEffect(()=>()=>payoutRequestRef.current?.abort(),[]);
+  const chooseEmployee=(value)=>{
+    invalidatePayoutPreview();setEmployeeId(value);
+    applyEmployeePeriod(employees.find(employee=>String(employee.id)===String(value)));
+  };
+  async function calculate(event){
+    event.preventDefault();
+    payoutRequestRef.current?.abort();
+    const controller=new AbortController();
+    payoutRequestRef.current=controller;
+    setLoading(true);setResult(null);setError('');
+    try{
+      const response=await fetch(`/api/payroll/employees/${employeeId}/payout-preview`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({periodStart,periodEnd,payDate}),signal:controller.signal});
+      const data=await response.json();
+      if(!response.ok)throw new Error(data.error||'Unable to calculate payout.');
+      if(payoutRequestRef.current!==controller)return;
+      setResult(data);setError('');
+    }catch(calculateError){
+      if(calculateError.name!=='AbortError'&&payoutRequestRef.current===controller)setError(calculateError.message);
+    }finally{
+      if(payoutRequestRef.current===controller){payoutRequestRef.current=null;setLoading(false);}
+    }
+  }
   const money=value=>`₱${Number(value||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}`;
-  return <section className="overview-view payout-view"><div className="module-title"><div><span>Payroll</span><h1>Payout View</h1><p>Preview an employee's actual payout using salary configuration, attendance, contributions, deductions, and tax.</p></div></div><form className="payout-controls" onSubmit={calculate}><label><span>Employee</span><select value={employeeId} onChange={event=>setEmployeeId(event.target.value)} required><option value="">Select employee</option>{employees.map(employee=><option value={employee.id} key={employee.id}>{employee.firstName} {employee.lastName} · {employee.employeeNumber}</option>)}</select></label><label><span>Period start</span><input type="date" value={periodStart} onChange={event=>setPeriodStart(event.target.value)} required/></label><label><span>Period end</span><input type="date" value={periodEnd} onChange={event=>setPeriodEnd(event.target.value)} required/></label><label><span>Pay date</span><input type="date" value={payDate} onChange={event=>setPayDate(event.target.value)} required/></label><button type="submit" disabled={!employeeId||loading}>{loading?'Calculating…':'Calculate payout'}</button></form>{error&&<p className="rbac-message">{error}</p>}{result&&<><div className="payout-summary"><article><span>Configured period pay</span><strong>{money(result.salary.periodBase)}</strong><small>Before attendance</small></article><article className={result.salary.attendanceDeduction?'needs-attention':''}><span>Attendance deduction</span><strong>{money(result.salary.attendanceDeduction)}</strong><small>{result.attendance.totalPenaltyMinutes} penalty minutes</small></article><article><span>Gross payout</span><strong>{money(result.grossPay)}</strong><small>After attendance and earnings</small></article><article><span>Total deductions</span><strong>{money(result.totalDeductions)}</strong><small>Attendance, statutory, tax, and recurring</small></article><article className="net-pay"><span>Net payout</span><strong>{money(result.netPay)}</strong><small>Expected employee take-home pay</small></article></div><div className="payout-breakdown"><section><h2>Earnings</h2><dl><div><dt>Adjusted base pay</dt><dd>{money(result.salary.adjustedBase)}</dd></div>{result.earnings.map(item=><div key={item.name}><dt>{item.name}</dt><dd>{money(item.value)}</dd></div>)}<div className="total"><dt>Gross payout</dt><dd>{money(result.grossPay)}</dd></div></dl></section><section><h2>Deductions</h2><dl><div><dt>Attendance</dt><dd>{money(result.salary.attendanceDeduction)}</dd></div><div><dt>SSS</dt><dd>{money(result.contributions.sssEmployee)}</dd></div><div><dt>PhilHealth</dt><dd>{money(result.contributions.philhealthEmployee)}</dd></div><div><dt>Pag-IBIG</dt><dd>{money(result.contributions.pagibigEmployee)}</dd></div><div><dt>Union dues</dt><dd>{money(result.unionDues)}</dd></div>{result.deductions.map(item=><div key={item.name}><dt>{item.name}</dt><dd>{money(item.value)}</dd></div>)}<div><dt>Withholding tax</dt><dd>{money(result.tax.amount)}</dd></div><div className="total"><dt>Net payout</dt><dd>{money(result.netPay)}</dd></div></dl></section></div><section className="payout-attendance"><div className="friendly-table-heading"><div><span>Attendance computation</span><h2>{result.employee.name}</h2></div><small>{result.attendance.scheduledDays} scheduled days</small></div><div className="payout-attendance-row head"><span>Date</span><span>Status</span><span>Late</span><span>Break excess</span><span>Undertime</span><span>Deduction</span></div>{result.attendance.days.map(item=><div className={`payout-attendance-row${item.penaltyMinutes?' exception':''}`} key={item.date}><span>{new Date(`${item.date}T00:00:00`).toLocaleDateString()}</span><b>{item.absent?'Absent':item.punches.length?`${item.punches.length} punches`:'No entries'}</b><span>{item.lateMinutes} min</span><span>{item.breakExcessMinutes} min</span><span>{item.undertimeMinutes} min</span><strong>{money(item.deduction)}</strong></div>)}</section></>}</section>;
+  const payoutItemKey=(kind,item,index)=>item.id?`${kind}:${item.id}`:`${kind}:${item.name}:${item.calculation||'value'}:${item.value}:${index}`;
+  const attendanceStatus=item=>{
+    const incomplete=item.incompletePunches?' · Incomplete punches':'';
+    if(item.holiday){
+      const rawStatus=String(item.holiday.status||item.holiday.type||'holiday').replaceAll('_',' ');
+      const holidayStatus=rawStatus.charAt(0).toUpperCase()+rawStatus.slice(1);
+      return `${item.holiday.title||'Company holiday'} · ${holidayStatus}${incomplete}`;
+    }
+    if(item.incompletePunches)return 'Incomplete punches';
+    if(item.absent)return 'Absent';
+    const punchCount=Array.isArray(item.punches)?item.punches.length:0;
+    return punchCount?`${punchCount} punches`:'No entries';
+  };
+
+  return <section className="overview-view payout-view">
+    <div className="module-title"><div><span>Payroll</span><h1>Payout View</h1><p>Preview an employee's payout using salary configuration, attendance, holiday rules, contributions, deductions, and tax.</p></div></div>
+    <form className="payout-controls" onSubmit={calculate}>
+      <label><span>Employee</span><select value={employeeId} onChange={event=>chooseEmployee(event.target.value)} required><option value="">Select employee</option>{employees.map(employee=><option value={employee.id} key={employee.id}>{employee.firstName} {employee.lastName} · {employee.employeeNumber}</option>)}</select></label>
+      <label><span>Period start</span><input type="date" value={periodStart} onChange={event=>{invalidatePayoutPreview();setPeriodStart(event.target.value);}} required/></label>
+      <label><span>Period end</span><input type="date" value={periodEnd} onChange={event=>{invalidatePayoutPreview();setPeriodEnd(event.target.value);if(payDate<event.target.value)setPayDate(event.target.value);}} required/></label>
+      <label><span>Pay date</span><input type="date" min={periodEnd||undefined} value={payDate} onChange={event=>{invalidatePayoutPreview();setPayDate(event.target.value);}} required/></label>
+      <button type="submit" disabled={!employeeId||loading}>{loading?'Calculating…':'Calculate payout'}</button>
+    </form>
+    {error&&<p className="rbac-message" role="alert">{error}</p>}
+    {result&&<>
+      {result.attendance?.warnings?.map(warning=><p className="rbac-message" role="alert" key={warning}>{warning} Review this attendance before finalizing payroll.</p>)}
+      {result.holidayPayAssumptions?.map(assumption=><p className="rbac-message" role="note" key={assumption}>{assumption}</p>)}
+      <div className="payout-summary">
+        <article><span>Configured period pay</span><strong>{money(result.salary.periodBase)}</strong><small>Before attendance</small></article>
+        <article className={result.salary.attendanceDeduction?'needs-attention':''}><span>Attendance / holiday adjustment</span><strong>{money(result.salary.attendanceDeduction)}</strong><small>{result.attendance.totalPenaltyMinutes} penalty minutes</small></article>
+        <article><span>Gross payout</span><strong>{money(result.grossPay)}</strong><small>Before deductions</small></article>
+        <article><span>Total deductions</span><strong>{money(result.totalDeductions)}</strong><small>Attendance, statutory, tax, and recurring</small></article>
+        <article className="net-pay"><span>Net payout</span><strong>{money(result.netPay)}</strong><small>Expected employee take-home pay</small></article>
+      </div>
+      <div className="payout-breakdown">
+        <section><h2>Earnings</h2><dl><div><dt>Configured base pay</dt><dd>{money(result.salary.periodBase)}</dd></div>{result.earnings.map((item,index)=><div key={payoutItemKey('earning',item,index)}><dt>{item.name}</dt><dd>{money(item.value)}</dd></div>)}<div className="total"><dt>Gross payout</dt><dd>{money(result.grossPay)}</dd></div></dl></section>
+        <section><h2>Deductions</h2><dl><div><dt>Attendance / unpaid holiday</dt><dd>{money(result.salary.attendanceDeduction)}</dd></div><div><dt>SSS</dt><dd>{money(result.contributions.sssEmployee)}</dd></div><div><dt>PhilHealth</dt><dd>{money(result.contributions.philhealthEmployee)}</dd></div><div><dt>Pag-IBIG</dt><dd>{money(result.contributions.pagibigEmployee)}</dd></div><div><dt>Union dues</dt><dd>{money(result.unionDues)}</dd></div>{result.deductions.map((item,index)=><div key={payoutItemKey('deduction',item,index)}><dt>{item.name}</dt><dd>{money(item.value)}</dd></div>)}<div><dt>Withholding tax</dt><dd>{money(result.tax.amount)}</dd></div><div className="total"><dt>Net payout</dt><dd>{money(result.netPay)}</dd></div></dl></section>
+      </div>
+      <section className="payout-attendance">
+        <div className="friendly-table-heading"><div><span>Attendance computation</span><h2>{result.employee.name}</h2></div><small>{result.attendance.scheduledDays} scheduled days</small></div>
+        <div className="payout-attendance-row head"><span>Date</span><span>Status</span><span>Late</span><span>Break excess</span><span>Undertime</span><span>Deduction</span></div>
+        {result.attendance.days.map(item=><div className={`payout-attendance-row${item.penaltyMinutes||item.incompletePunches?' exception':''}`} key={item.date}><span>{new Date(`${item.date}T00:00:00`).toLocaleDateString()}</span><b>{attendanceStatus(item)}</b><span>{item.lateMinutes} min</span><span>{item.breakExcessMinutes} min</span><span>{item.undertimeMinutes} min</span><strong>{money(item.deduction)}</strong></div>)}
+      </section>
+    </>}
+  </section>;
 }
 
 function PayrollTaxCalculator({user}){
   const permission=effectiveModulePermission(user,'payroll_setup');const[employees,setEmployees]=useState([]),[selected,setSelected]=useState(null),[profile,setProfile]=useState(null),[components,setComponents]=useState([]),[result,setResult]=useState(null),[message,setMessage]=useState('');
-  useEffect(()=>{fetch('/api/payroll/employees').then(r=>r.json()).then(d=>setEmployees(d.employees||[])).catch(e=>setMessage(e.message));},[]);
-  async function selectEmployee(employee){setSelected(employee);setResult(null);const r=await fetch(`/api/payroll/employees/${employee.id}`),d=await r.json();if(!r.ok)return setMessage(d.error);setProfile({...emptyPayrollProfile,...d.profile});setComponents(d.components||[]);}
-  async function saveProfile(){const r=await fetch(`/api/payroll/employees/${selected.id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({...profile,components})}),d=await r.json();setMessage(r.ok?'Statutory settings saved.':d.error);}
-  async function calculate(event){event.preventDefault();const data=Object.fromEntries(new FormData(event.currentTarget));const r=await fetch(`/api/payroll/employees/${selected.id}/compliance-preview`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}),d=await r.json();if(!r.ok){setMessage(d.error);setResult(null);}else{setResult(d);setMessage('');}}
+  const [regularCompensation,setRegularCompensation]=useState('');
+  const [settingsDirty,setSettingsDirty]=useState(false);
+  const [savingProfile,setSavingProfile]=useState(false);
+  const [calculating,setCalculating]=useState(false);
+  const selectionRequestRef=useRef(null);
+  const previewRequestRef=useRef(null);
+  useEffect(()=>{
+    const controller=new AbortController();
+    (async()=>{
+      try{
+        const response=await fetch('/api/payroll/employees',{signal:controller.signal});
+        const data=await response.json();
+        if(!response.ok)throw new Error(data.error||'Unable to load payroll employees.');
+        setEmployees(data.employees||[]);
+      }catch(error){if(error.name!=='AbortError')setMessage(error.message);}
+    })();
+    return()=>controller.abort();
+  },[]);
+  function invalidateTaxPreview(){
+    previewRequestRef.current?.abort();
+    previewRequestRef.current=null;
+    setCalculating(false);setResult(null);setMessage('');
+  }
+  function updateTaxProfile(key,value){
+    invalidateTaxPreview();setMessage('');setSettingsDirty(true);
+    setProfile(current=>({...current,[key]:value}));
+  }
+  async function selectEmployee(employee) {
+    if(String(selected?.id||'')===String(employee.id)&&profile)return;
+    if(settingsDirty){
+      const discard=await confirmModal('You have unsaved tax treatment changes. Discard them and switch employees?','Unsaved tax changes');
+      if(!discard)return;
+    }
+    selectionRequestRef.current?.abort();
+    invalidateTaxPreview();
+    const controller = new AbortController();
+    selectionRequestRef.current = controller;
+    setSelected(employee);
+    setProfile(null);
+    setComponents([]);
+    setResult(null);
+    setRegularCompensation('');
+    setSettingsDirty(false);
+    setMessage('');
+    try {
+      const response = await fetch(`/api/payroll/employees/${employee.id}`, { signal:controller.signal });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Unable to load statutory settings.');
+      if (selectionRequestRef.current !== controller) return;
+      setProfile({ ...emptyPayrollProfile, ...data.profile });
+      setComponents(data.components || []);
+      setSettingsDirty(!data.profile);
+    } catch (error) {
+      if (error.name !== 'AbortError' && selectionRequestRef.current === controller) setMessage(error.message);
+    } finally {
+      if(selectionRequestRef.current===controller)selectionRequestRef.current=null;
+    }
+  }
+  useEffect(() => () => {selectionRequestRef.current?.abort();previewRequestRef.current?.abort();}, []);
+  async function saveProfile() {
+    if (!selected || !profile || !permission?.update || savingProfile) return;
+    const employeeId = selected.id;
+    setSavingProfile(true);setMessage('');
+    try {
+      const response = await fetch(`/api/payroll/employees/${employeeId}`, {
+        method:'PUT',
+        headers:{ 'Content-Type':'application/json' },
+        body:JSON.stringify({ ...profile, components })
+      });
+      const data = await response.json();
+      if(!response.ok)throw new Error(data.error||'Unable to save statutory settings.');
+      setSettingsDirty(false);setMessage(data.message||'Statutory settings saved.');
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setSavingProfile(false);
+    }
+  }
+  async function calculate(event){
+    event.preventDefault();
+    if(!selected||settingsDirty||savingProfile)return setMessage('Save the employee tax treatment before calculating withholding.');
+    previewRequestRef.current?.abort();
+    const controller=new AbortController();
+    previewRequestRef.current=controller;
+    const data=Object.fromEntries(new FormData(event.currentTarget));
+    setCalculating(true);setResult(null);setMessage('');
+    try{
+      const response=await fetch(`/api/payroll/employees/${selected.id}/compliance-preview`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data),signal:controller.signal});
+      const preview=await response.json();
+      if(!response.ok)throw new Error(preview.error||'Unable to calculate withholding.');
+      if(previewRequestRef.current!==controller)return;
+      setResult(preview);
+    }catch(error){
+      if(error.name!=='AbortError'&&previewRequestRef.current===controller)setMessage(error.message);
+    }finally{
+      if(previewRequestRef.current===controller){previewRequestRef.current=null;setCalculating(false);}
+    }
+  }
   const money=value=>`₱${Number(value||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}`;
-  return <section className="payroll-setup-view"><div className="module-title"><div><span>Payroll</span><h1>Philippine Tax Calculator</h1><p>Apply the effective BIR table to an employee's taxable compensation.</p></div></div>{message&&<p className="rbac-message">{message}</p>}<div className="tax-payroll-layout"><aside className="payroll-employee-list"><div>{employees.map(employee=><button type="button" className={selected?.id===employee.id?'selected':''} key={employee.id} onClick={()=>selectEmployee(employee)}><span><strong>{employee.firstName} {employee.lastName}</strong><small>{employee.employeeNumber}</small></span></button>)}</div></aside><main>{!profile?<div className="time-entry-empty-state"><strong>Choose an employee</strong><p>Select an employee to configure statutory deductions and calculate withholding.</p></div>:<><section className="statutory-settings"><h2>Employee tax treatment</h2><div className="payroll-field-grid"><label><span>Tax status</span><select value={profile.taxStatus} onChange={e=>setProfile({...profile,taxStatus:e.target.value})}><option value="taxable">Taxable</option><option value="exempt">Tax exempt</option></select></label><label className="tax-active"><input type="checkbox" checked={profile.isMinimumWageEarner} onChange={e=>setProfile({...profile,isMinimumWageEarner:e.target.checked})}/>Minimum wage earner</label>{[['sssEmployeeShare','SSS employee share'],['philhealthEmployeeShare','PhilHealth employee share'],['pagibigEmployeeShare','Pag-IBIG employee share'],['unionDues','Union dues']].map(([key,label])=><label key={key}><span>{label} per pay period</span><input type="number" min="0" step=".01" value={profile[key]} onChange={e=>setProfile({...profile,[key]:e.target.value})}/></label>)}</div>{permission?.update&&<button type="button" className="save-tax" onClick={saveProfile}>Save statutory settings</button>}</section><form className="employee-tax-preview" onSubmit={calculate}><h2>Current pay period</h2><div className="payroll-field-grid"><label><span>Pay date</span><input name="payDate" type="date" required defaultValue={new Date().toISOString().slice(0,10)}/></label><label><span>Additional taxable compensation</span><input name="supplementaryCompensation" type="number" min="0" step=".01" defaultValue="0"/></label><label><span>Other non-taxable compensation</span><input name="otherNonTaxableCompensation" type="number" min="0" step=".01" defaultValue="0"/></label><label><span>YTD taxable compensation</span><input name="yearToDateTaxableCompensation" type="number" min="0" step=".01" defaultValue="0"/></label><label><span>YTD tax already withheld</span><input name="yearToDateTaxWithheld" type="number" min="0" step=".01" defaultValue="0"/></label></div><button className="save-tax">Calculate withholding</button></form>{result&&<div className="tax-result"><article><span>Gross compensation</span><strong>{money(result.grossCompensation)}</strong></article><article><span>Mandatory contributions</span><strong>{money(result.mandatoryContributions)}</strong></article><article><span>Taxable compensation</span><strong>{money(result.taxableIncome)}</strong></article><article><span>Withholding this period</span><strong>{money(result.tax)}</strong></article><article><span>Annualized tax</span><strong>{money(result.annualizedTax)}</strong></article><article><span>Year-end balance</span><strong>{money(result.yearEndBalance)}</strong></article><small>Table: {result.configuration.name}</small></div>}</>}</main></div></section>;
+  return <section className="payroll-setup-view">
+    <div className="module-title"><div><span>Payroll</span><h1>Philippine Tax Calculator</h1><p>Apply the effective BIR table to an employee's taxable compensation.</p></div></div>
+    {message&&<p className="rbac-message" role="status">{message}</p>}
+    <div className="tax-payroll-layout">
+      <aside className="payroll-employee-list"><div>{employees.map(employee=><button type="button" className={selected?.id===employee.id?'selected':''} key={employee.id} disabled={savingProfile} onClick={()=>selectEmployee(employee)}><span><strong>{employee.firstName} {employee.lastName}</strong><small>{employee.employeeNumber}</small></span></button>)}</div></aside>
+      <main>{!profile?<div className="time-entry-empty-state"><strong>Choose an employee</strong><p>Select an employee to configure statutory deductions and calculate withholding.</p></div>:<>
+        <section className="statutory-settings">
+          <h2>Employee tax treatment</h2>
+          <div className="payroll-field-grid">
+            <label><span>Tax status</span><select value={profile.taxStatus} disabled={!permission?.update||savingProfile} onChange={event=>updateTaxProfile('taxStatus',event.target.value)}><option value="taxable">Taxable</option><option value="exempt">Tax exempt</option></select></label>
+            <label className="tax-active"><input type="checkbox" checked={profile.isMinimumWageEarner} disabled={!permission?.update||savingProfile} onChange={event=>updateTaxProfile('isMinimumWageEarner',event.target.checked)}/>Minimum wage earner</label>
+            {[['sssEmployeeShare','SSS employee share'],['philhealthEmployeeShare','PhilHealth employee share'],['pagibigEmployeeShare','Pag-IBIG employee share'],['unionDues','Union dues']].map(([key,label])=><label key={key}><span>{label} per pay period</span><input type="number" min="0" step=".01" value={profile[key]} disabled={!permission?.update||savingProfile} onChange={event=>updateTaxProfile(key,event.target.value)}/></label>)}
+          </div>
+          {settingsDirty&&<p className="rbac-message" role="status">{permission?.update?'Save these tax treatment changes before calculating a new preview.':'An authorized user must save this employee tax treatment before a preview can be calculated.'}</p>}
+          {permission?.update&&<button type="button" className="save-tax" disabled={!settingsDirty||savingProfile} onClick={saveProfile}>{savingProfile?'Saving…':settingsDirty?'Save tax treatment':'Tax treatment saved'}</button>}
+        </section>
+        <form className="employee-tax-preview" key={selected.id} aria-busy={calculating} onSubmit={calculate}>
+          <h2>Current pay period</h2>
+          <div className="payroll-field-grid">
+            <label><span>Pay date</span><input name="payDate" type="date" required defaultValue={localDateValue(new Date())} onChange={invalidateTaxPreview}/></label>
+            {['daily','hourly'].includes(profile.payBasis)&&<label><span>Regular compensation this pay period</span><input name="regularCompensation" type="number" min="0" step=".01" value={regularCompensation} onChange={event=>{invalidateTaxPreview();setRegularCompensation(event.target.value);}} required/></label>}
+            <label><span>Additional taxable compensation</span><input name="supplementaryCompensation" type="number" min="0" step=".01" defaultValue="0" onChange={invalidateTaxPreview}/></label>
+            <label><span>Other non-taxable compensation</span><input name="otherNonTaxableCompensation" type="number" min="0" step=".01" defaultValue="0" onChange={invalidateTaxPreview}/></label>
+            <label><span>YTD taxable compensation</span><input name="yearToDateTaxableCompensation" type="number" min="0" step=".01" defaultValue="0" onChange={invalidateTaxPreview}/></label>
+            <label><span>YTD tax already withheld</span><input name="yearToDateTaxWithheld" type="number" min="0" step=".01" defaultValue="0" onChange={invalidateTaxPreview}/></label>
+          </div>
+          <button className="save-tax" type="submit" disabled={calculating||savingProfile||settingsDirty}>{calculating?'Calculating…':'Calculate withholding'}</button>
+        </form>
+        {result&&<div className="tax-result"><article><span>Gross compensation</span><strong>{money(result.grossCompensation)}</strong></article><article><span>Mandatory contributions</span><strong>{money(result.mandatoryContributions)}</strong></article><article><span>Taxable compensation</span><strong>{money(result.taxableIncome)}</strong></article><article><span>Withholding this period</span><strong>{money(result.tax)}</strong></article><article><span>Annualized tax</span><strong>{money(result.annualizedTax)}</strong></article><article><span>Year-end balance</span><strong>{money(result.yearEndBalance)}</strong></article><small>Table: {result.configuration.name}</small></div>}
+      </>}</main>
+    </div>
+  </section>;
 }
 
 const moduleCopy = {
@@ -697,7 +1067,7 @@ function Scheduler({ user }) {
     const response = await fetch('/api/scheduler/status', { cache: 'no-store' });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Unable to load synchronization status.');
-    setStatus({ ...data, agent: data.agent ? { ...data.agent, lastError: '' } : null });
+    setStatus(data);
     if (refreshConfiguration && data.syncConfiguration) setSyncConfiguration({ enabled: data.syncConfiguration.enabled, intervalMinutes: String(data.syncConfiguration.intervalMinutes) });
   }
 
@@ -1334,14 +1704,60 @@ function datesInRange(startDate, endDate) {
 }
 
 const emptyEmployee = {
-  employeeNumber: '', firstName: '', lastName: '', preferredName: '', email: '',
-  phone: '', jobTitle: '', department: '', hireDate: '', employmentStatus: 'active',
+  id: null, employeeNumber: '', firstName: '', middleName: '', lastName: '', suffix: '', preferredName: '',
+  email: '', phone: '', address: '', dateOfBirth: '', gender: '', civilStatus: '',
+  jobTitle: '', department: '', departmentId: '', positionId: '', managerEmployeeIds: [], assignmentCount: 0,
+  hireDate: '', employmentStatus: 'active', profilePictureUrl: null, hasProfilePicture: false,
   emergencyContactName: '', emergencyContactRelationship: '', emergencyContactPhone: '',
   emergencyContactAlternatePhone: '', temporaryPassword: '', roleId: '', roleName: '',
-  documents: [], hasLogin: false
+  documents: [], hasLogin: false, loginEnabled: null, payroll: null, workSchedule: null
 };
 
-function Workforce({ user }) {
+function employeeInitials(employee) {
+  const firstInitial = String(employee?.firstName || '?').trim().charAt(0);
+  const lastInitial = String(employee?.lastName || '?').trim().charAt(0);
+  return `${firstInitial}${lastInitial}`.toUpperCase();
+}
+
+function EmployeeAvatar({ employee, className = '' }) {
+  const source = employee?.profilePictureUrl || '';
+  const [imageFailed, setImageFailed] = useState(false);
+  useEffect(() => { setImageFailed(false); }, [source]);
+  return <span className={`employee-avatar ${className}`.trim()}>{source && !imageFailed
+    ? <img src={source} alt={`${employeeName(employee)} profile`} onError={() => setImageFailed(true)} />
+    : <b aria-hidden="true">{employeeInitials(employee)}</b>}</span>;
+}
+
+function employeeFormFromProfile(employee) {
+  const assignment = employee?.organizationAssignment;
+  const assignmentCount = Number(assignment?.assignmentCount || 0);
+  return {
+    ...emptyEmployee,
+    ...employee,
+    hireDate: employee?.hireDate ? String(employee.hireDate).slice(0, 10) : '',
+    dateOfBirth: employee?.dateOfBirth ? String(employee.dateOfBirth).slice(0, 10) : '',
+    roleId: employee?.roleId ? String(employee.roleId) : '',
+    departmentId: assignmentCount === 1 ? String(assignment?.departmentIds?.[0] || '') : '',
+    positionId: assignmentCount === 1 ? String(assignment?.positionId || '') : '',
+    managerEmployeeIds: assignmentCount === 1 ? (assignment?.managerEmployeeIds || []).map(String) : [],
+    assignmentCount
+  };
+}
+
+function assignmentSignature(employee) {
+  return JSON.stringify({
+    departmentId: String(employee?.departmentId || ''),
+    positionId: String(employee?.positionId || '')
+  });
+}
+
+function formatEmployeeDate(value, style = { year:'numeric', month:'long', day:'numeric' }) {
+  if (!value) return 'Not provided';
+  const date = new Date(`${String(value).slice(0, 10)}T00:00:00`);
+  return Number.isNaN(date.getTime()) ? 'Not provided' : date.toLocaleDateString(undefined, style);
+}
+
+function Workforce({ user, onNavigate }) {
   const [employees, setEmployees] = useState([]);
   const [search, setSearch] = useState('');
   const [showResults, setShowResults] = useState(false);
@@ -1351,10 +1767,26 @@ function Workforce({ user }) {
   const [form, setForm] = useState(emptyEmployee);
   const [message, setMessage] = useModalMessage();
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [profileLoading, setProfileLoading] = useState(false);
   const [roleOptions, setRoleOptions] = useState([]);
+  const [departmentOptions, setDepartmentOptions] = useState([]);
+  const [positionOptions, setPositionOptions] = useState([]);
+  const assignmentSnapshotRef = useRef('');
+  const profileRequestRef = useRef(null);
+  const profileRequestIdRef = useRef(0);
+  const saveInFlightRef = useRef(false);
+  const deleteInFlightRef = useRef(false);
   const permission = effectiveModulePermission(user,'workforce');
+  const organizationPermission = effectiveModulePermission(user,'organization');
+  const canManageOrganization = Boolean(organizationPermission?.update);
+  const canViewPayroll = Boolean(effectiveModulePermission(user,'payroll_setup')?.view);
+  const canViewSchedule = Boolean(effectiveModulePermission(user,'shift_management')?.view);
 
-  useEffect(() => { showAllEmployees(); }, []);
+  useEffect(() => {
+    showAllEmployees();
+    return () => profileRequestRef.current?.abort();
+  }, []);
 
   async function loadEmployees(query = search) {
     const response = await fetch(`/api/workforce?search=${encodeURIComponent(query)}`);
@@ -1383,96 +1815,255 @@ function Workforce({ user }) {
     return () => { window.clearTimeout(timer); controller.abort(); };
   }, [search]);
 
+  async function loadEditorOptions() {
+    const requests = [fetch('/api/workforce/role-options')];
+    if (canManageOrganization) {
+      requests.push(fetch('/api/workforce/department-options'), fetch('/api/workforce/position-options'));
+    }
+    const responses = await Promise.all(requests);
+    const data = await Promise.all(responses.map(async (response) => ({ response, data:await response.json().catch(() => ({})) })));
+    const failed = data.find(({ response }) => !response.ok);
+    if (failed) throw new Error(failed.data.error || 'Unable to load employee form options.');
+
+    const roles = data[0].data.roles || [];
+    setRoleOptions(roles);
+    if (canManageOrganization) {
+      setDepartmentOptions(data[1].data.departments || []);
+      setPositionOptions(data[2].data.positions || []);
+    } else {
+      setDepartmentOptions([]);
+      setPositionOptions([]);
+    }
+    return roles;
+  }
+
+  function applyLoadedProfile(employee) {
+    const nextForm = employeeFormFromProfile(employee);
+    assignmentSnapshotRef.current = assignmentSignature(nextForm);
+    setForm(nextForm);
+    return nextForm;
+  }
+
+  function cancelProfileRequest() {
+    profileRequestIdRef.current += 1;
+    profileRequestRef.current?.abort();
+    profileRequestRef.current = null;
+    setProfileLoading(false);
+  }
+
+  function closeEmployeeEditor() {
+    if (saveInFlightRef.current || deleteInFlightRef.current) return;
+    cancelProfileRequest();
+    setEditor(null);
+  }
+
   async function openCreate() {
+    if (saveInFlightRef.current || deleteInFlightRef.current) return;
+    cancelProfileRequest();
+    const editorRequestId = profileRequestIdRef.current;
+    assignmentSnapshotRef.current = assignmentSignature(emptyEmployee);
     setForm(emptyEmployee);
     setEditor({ mode: 'create' });
     setMessage('');
     try {
-      const roleResponse = await fetch('/api/workforce/role-options');
-      const roleData = await roleResponse.json();
-      if (!roleResponse.ok) throw new Error(roleData.error || 'Unable to load employee roles.');
-      setRoleOptions(roleData.roles);
-      const defaultRole = roleData.roles.find((role) => role.name === 'Employee') || roleData.roles[0];
+      const roles = await loadEditorOptions();
+      if (editorRequestId !== profileRequestIdRef.current) return;
+      const defaultRole = roles.find((role) => role.name === 'Employee' && role.assignable !== false)
+        || roles.find((role) => role.assignable !== false);
       setForm((current) => ({ ...current, roleId: defaultRole ? String(defaultRole.id) : '' }));
     } catch (error) {
-      setMessage(error.message);
+      if (editorRequestId === profileRequestIdRef.current) setMessage(error.message);
     }
   }
 
   async function openProfile(employee, mode = 'view') {
-    setForm({ ...emptyEmployee, ...employee, hireDate: employee.hireDate ? employee.hireDate.slice(0, 10) : '' });
+    if (saveInFlightRef.current || deleteInFlightRef.current) return;
+    cancelProfileRequest();
+    const requestId = profileRequestIdRef.current;
+    const controller = new AbortController();
+    profileRequestRef.current = controller;
+    applyLoadedProfile(employee);
     setEditor({ mode, employee });
+    setProfileLoading(true);
     setMessage('');
     try {
-      const response = await fetch(`/api/workforce/${employee.id}`);
+      const response = await fetch(`/api/workforce/${employee.id}`, { signal:controller.signal });
       const data = await response.json();
+      if (requestId !== profileRequestIdRef.current) return;
       if (!response.ok) throw new Error(data.error || 'Unable to load employee profile.');
-      setForm({ ...emptyEmployee, ...data.employee, hireDate: data.employee.hireDate ? data.employee.hireDate.slice(0, 10) : '' });
+      applyLoadedProfile(data.employee);
       setEditor({ mode, employee: data.employee });
     } catch (error) {
-      setMessage(error.message);
+      if (error.name !== 'AbortError' && requestId === profileRequestIdRef.current) setMessage(error.message);
+    } finally {
+      if (requestId === profileRequestIdRef.current) {
+        profileRequestRef.current = null;
+        setProfileLoading(false);
+      }
     }
   }
 
   async function beginEdit() {
+    if (profileLoading || saveInFlightRef.current || deleteInFlightRef.current) return;
+    const editorRequestId = profileRequestIdRef.current;
     setEditor((current) => ({ ...current, mode: 'edit' }));
     setMessage('');
     try {
-      const roleResponse = await fetch('/api/workforce/role-options');
-      const roleData = await roleResponse.json();
-      if (!roleResponse.ok) throw new Error(roleData.error || 'Unable to load employee roles.');
-      setRoleOptions(roleData.roles);
+      await loadEditorOptions();
     } catch (error) {
-      setMessage(error.message);
+      if (editorRequestId === profileRequestIdRef.current) setMessage(error.message);
     }
   }
 
   function updateField(event) {
-    setForm((current) => ({ ...current, [event.target.name]: event.target.value }));
+    const { name, value } = event.target;
+    setForm((current) => {
+      if (name === 'employmentStatus' && value === 'inactive') {
+        let originalAssignment = { departmentId:'', positionId:'' };
+        try { originalAssignment = JSON.parse(assignmentSnapshotRef.current) || originalAssignment; } catch {}
+        return {
+          ...current,
+          employmentStatus:value,
+          departmentId:String(originalAssignment.departmentId || ''),
+          positionId:String(originalAssignment.positionId || '')
+        };
+      }
+      return { ...current, [name]:value };
+    });
   }
 
-  async function submitProfile(event, documents = []) {
+  async function submitProfile(event, documents = [], profilePicture = {}, onDocumentUploaded = () => {}) {
     event.preventDefault();
+    if (saveInFlightRef.current || deleteInFlightRef.current || !editor) return;
+    const assignmentCount = Number(form.assignmentCount || 0);
+    const hasDepartment = Boolean(String(form.departmentId || ''));
+    const hasPosition = Boolean(String(form.positionId || ''));
+    if (canManageOrganization && assignmentCount <= 1 && hasDepartment !== hasPosition) {
+      setMessage('Select both a department and a position before saving the employee.');
+      return;
+    }
+    if (canManageOrganization && assignmentCount === 1 && (!hasDepartment || !hasPosition)) {
+      setMessage('Remove an existing organization assignment from Setup → Organization.');
+      return;
+    }
+    saveInFlightRef.current = true;
     setSaving(true);
     setMessage('');
     const editing = editor.mode === 'edit';
-    const response = await fetch(editing ? `/api/workforce/${editor.employee.id}` : '/api/workforce', {
-      method: editing ? 'PUT' : 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(form)
-    });
-    const data = await response.json();
-    if (!response.ok) { setSaving(false); return setMessage(data.error || 'Unable to save employee.'); }
-    for (const document of documents) {
-      const extension = document.name.split('.').pop()?.toLowerCase();
-      const fallbackTypes = { pdf: 'application/pdf', doc: 'application/msword', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png' };
-      const uploadResponse = await fetch(`/api/workforce/${data.employee.id}/documents`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/octet-stream', 'X-File-Name': encodeURIComponent(document.name), 'X-File-Type': document.type || fallbackTypes[extension] || '' },
-        body: document
-      });
-      if (!uploadResponse.ok) {
-        setSaving(false);
-        return setMessage((await uploadResponse.json()).error || `Unable to upload ${document.name}.`);
+    let profileWasSaved = false;
+    let uploadedDocumentCount = 0;
+    const readResponse = async (response) => {
+      try { return await response.json(); } catch { return {}; }
+    };
+
+    try {
+      const profilePayload = {
+        firstName:form.firstName, middleName:form.middleName, lastName:form.lastName, suffix:form.suffix,
+        preferredName:form.preferredName, email:form.email, phone:form.phone, address:form.address,
+        dateOfBirth:form.dateOfBirth, gender:form.gender, civilStatus:form.civilStatus, hireDate:form.hireDate,
+        emergencyContactName:form.emergencyContactName, emergencyContactRelationship:form.emergencyContactRelationship,
+        emergencyContactPhone:form.emergencyContactPhone, emergencyContactAlternatePhone:form.emergencyContactAlternatePhone,
+        employmentStatus:form.employmentStatus, roleId:form.roleId, temporaryPassword:form.temporaryPassword,
+        departmentId:form.departmentId, positionId:form.positionId
+      };
+      const payload = { ...profilePayload };
+      if (profilePicture.clear) payload.clearProfilePicture = true;
+      if (profilePicture.base64) {
+        payload.profilePictureBase64 = profilePicture.base64;
+        payload.profilePictureMimeType = profilePicture.mimeType;
       }
+      const organizationChanged = canManageOrganization && form.employmentStatus === 'active' && (editing
+        ? assignmentSignature(profilePayload) !== assignmentSnapshotRef.current
+        : Boolean(profilePayload.departmentId || profilePayload.positionId));
+      if (organizationChanged) payload.syncOrganizationAssignment = true;
+
+      const response = await fetch(editing ? '/api/workforce/' + editor.employee.id : '/api/workforce', {
+        method:editing ? 'PUT' : 'POST',
+        headers:{ 'Content-Type':'application/json' },
+        body:JSON.stringify(payload)
+      });
+      const data = await readResponse(response);
+      if (!response.ok || !data.employee) throw new Error(data.error || 'Unable to save employee.');
+      profileWasSaved = true;
+
+      for (const document of documents) {
+        const extension = document.name.split('.').pop()?.toLowerCase();
+        const fallbackTypes = {
+          pdf:'application/pdf',
+          doc:'application/msword',
+          docx:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          jpg:'image/jpeg',
+          jpeg:'image/jpeg',
+          png:'image/png'
+        };
+        const uploadResponse = await fetch('/api/workforce/' + data.employee.id + '/documents', {
+          method:'POST',
+          headers:{
+            'Content-Type':'application/octet-stream',
+            'X-File-Name':encodeURIComponent(document.name),
+            'X-File-Type':document.type || fallbackTypes[extension] || ''
+          },
+          body:document
+        });
+        const uploadData = await readResponse(uploadResponse);
+        if (!uploadResponse.ok) throw new Error(uploadData.error || 'Unable to upload ' + document.name + '.');
+        uploadedDocumentCount += 1;
+        onDocumentUploaded(document);
+      }
+
+      const detailResponse = await fetch('/api/workforce/' + data.employee.id);
+      const detailData = await readResponse(detailResponse);
+      if (!detailResponse.ok || !detailData.employee) {
+        throw new Error(detailData.error || 'Unable to reload employee profile.');
+      }
+      await loadEmployees();
+      setEditor({ mode:'view', employee:detailData.employee });
+      applyLoadedProfile(detailData.employee);
+      setMessage(editing ? 'Employee profile updated.' : 'Employee profile created.');
+    } catch (error) {
+      if (profileWasSaved) {
+        loadEmployees().catch(() => {});
+        const remainingDocumentCount = Math.max(0, documents.length - uploadedDocumentCount);
+        const uploadedSummary = uploadedDocumentCount
+          ? ` ${uploadedDocumentCount} ${uploadedDocumentCount === 1 ? 'document was' : 'documents were'} uploaded.`
+          : '';
+        const retrySummary = remainingDocumentCount
+          ? ` ${remainingDocumentCount} ${remainingDocumentCount === 1 ? 'document remains' : 'documents remain'} selected; save again to retry only the remaining upload${remainingDocumentCount === 1 ? '' : 's'}.`
+          : '';
+        setMessage(`Employee profile was saved.${uploadedSummary} A follow-up step failed: ${error.message || 'The profile could not be reloaded.'}${retrySummary}`);
+      } else {
+        setMessage(error.message || 'Unable to save employee.');
+      }
+    } finally {
+      saveInFlightRef.current = false;
+      setSaving(false);
     }
-    const detailResponse = await fetch(`/api/workforce/${data.employee.id}`);
-    const detailData = await detailResponse.json();
-    setSaving(false);
-    if (!detailResponse.ok) return setMessage(detailData.error || 'Unable to reload employee profile.');
-    await loadEmployees();
-    setEditor({ mode: 'view', employee: detailData.employee });
-    setForm({ ...emptyEmployee, ...detailData.employee, hireDate: detailData.employee.hireDate ? detailData.employee.hireDate.slice(0, 10) : '' });
-    setMessage(editing ? 'Employee profile updated.' : 'Employee profile created.');
   }
 
   async function deleteEmployee() {
-    if (!await confirmModal(`Delete ${form.firstName} ${form.lastName}'s profile?`, 'Delete employee profile?')) return;
-    const response = await fetch(`/api/workforce/${editor.employee.id}`, { method: 'DELETE' });
-    if (!response.ok) return setMessage((await response.json()).error || 'Unable to delete employee.');
-    setEditor(null);
-    await loadEmployees();
-    setMessage('Employee profile deleted.');
+    if (profileLoading || saveInFlightRef.current || deleteInFlightRef.current || !editor?.employee?.id) return;
+    deleteInFlightRef.current = true;
+    let deleted = false;
+    try {
+      if (!await confirmModal('Delete ' + form.firstName + ' ' + form.lastName + '\'s profile?', 'Delete employee profile?')) return;
+      setDeleting(true);
+      const response = await fetch('/api/workforce/' + editor.employee.id, { method:'DELETE' });
+      let data = {};
+      try { data = await response.json(); } catch {}
+      if (!response.ok) throw new Error(data.error || 'Unable to delete employee.');
+      deleted = true;
+      cancelProfileRequest();
+      setEditor(null);
+      await loadEmployees();
+      setMessage('Employee profile deleted.');
+    } catch (error) {
+      setMessage(deleted
+        ? `Employee profile was deleted, but the directory could not be refreshed. ${error.message || ''}`.trim()
+        : error.message || 'Unable to delete employee.');
+    } finally {
+      deleteInFlightRef.current = false;
+      setDeleting(false);
+    }
   }
 
   async function searchEmployees(event) {
@@ -1544,7 +2135,7 @@ function Workforce({ user }) {
             <span>Profile</span>
           </div>
           {sortedEmployees.map((employee)=><button className="employee-row" type="button" key={employee.id} onClick={()=>openProfile(employee)}>
-            <div className="employee-person"><i>{employee.firstName[0]}{employee.lastName[0]}</i><span><strong>{employee.preferredName||employee.firstName} {employee.lastName}</strong><small>{employee.email}</small></span></div>
+            <div className="employee-person"><EmployeeAvatar employee={employee}/><span className="employee-person-copy"><strong>{employeeName(employee)}</strong><small>{employee.email}</small></span></div>
             <div className="employee-assignment-cell"><strong>{employee.jobTitle||'No position assigned'}</strong><small>{employee.department||'No department assigned'}</small></div>
             <span className="employee-number-cell">{employee.employeeNumber}</span>
             <span className={`employment-status status-${employee.employmentStatus}`}><i/>{employee.employmentStatus.replace('_',' ')}</span>
@@ -1553,124 +2144,87 @@ function Workforce({ user }) {
           {!employees.length&&<div className="empty-workforce"><span>⌕</span><strong>No employees match your search</strong><small>Try a name, employee number, position, or department.</small>{search&&<button type="button" onClick={showAllEmployees}>Clear search</button>}</div>}
         </div>}
       </section>
-      {editor&&<div className="employee-modal" role="dialog" aria-modal="true" aria-labelledby="employee-editor-title"><button className="modal-scrim" onClick={()=>setEditor(null)} aria-label="Close"/><div className="employee-editor">
-        <div className="editor-header"><div><span>{editor.mode==='create'?'New employee':editor.mode==='edit'?'Edit employee':'Employee profile'}</span><h2 id="employee-editor-title">{editor.mode==='create'?'Add employee':`${form.firstName} ${form.lastName}`}</h2>{editor.mode!=='create'&&<small>{form.employeeNumber} · {form.jobTitle||'No position'} · {form.department||'No department'}</small>}</div><button onClick={()=>setEditor(null)} aria-label="Close">×</button></div>
-        {editor.mode==='view'?<EmployeeDetails employee={form}/>:<EmployeeForm form={form} mode={editor.mode} updateField={updateField} onSubmit={submitProfile} saving={saving} roles={roleOptions}/>} 
-        <div className="editor-actions">{editor.mode==='view'&&permission?.delete&&<button className="delete-profile" onClick={deleteEmployee}>Delete profile</button>}<span/><button className="secondary-action" onClick={()=>setEditor(null)}>Close</button>{editor.mode==='view'&&permission?.update&&<button className="primary-action" onClick={beginEdit}>Edit employee</button>}</div>
+      {editor&&<div className="employee-modal" role="dialog" aria-modal="true" aria-labelledby="employee-editor-title" aria-busy={saving || deleting || profileLoading}><button className="modal-scrim" type="button" onClick={closeEmployeeEditor} aria-label="Close" disabled={saving || deleting}/><div className="employee-editor">
+        <div className="editor-header workforce-editor-header"><div><span>{editor.mode==='create'?'New employee':editor.mode==='edit'?'Edit employee':'Employee profile'}</span><h2 id="employee-editor-title">{editor.mode==='create'?'Add employee':`${form.firstName} ${form.lastName}`}</h2>{editor.mode!=='create'&&<small>{form.employeeNumber} · {form.jobTitle||'No position'} · {form.department||'No department'}</small>}</div><div className="employee-editor-header-actions">{editor.mode==='view'&&permission?.update&&<button className="top-edit-employee" type="button" onClick={beginEdit} disabled={profileLoading || saving || deleting}>Edit employee</button>}<button className="employee-editor-close" type="button" onClick={closeEmployeeEditor} aria-label="Close" disabled={saving || deleting}>×</button></div></div>
+        {profileLoading&&<p className="employee-profile-loading" role="status">Loading complete employee details…</p>}
+        {editor.mode === 'view'
+          ? <EmployeeDetails employee={form} onNavigate={onNavigate} canViewPayroll={canViewPayroll} canViewSchedule={canViewSchedule}/>
+          : <EmployeeForm form={form} mode={editor.mode} updateField={updateField} onSubmit={submitProfile} saving={saving} roles={roleOptions} departments={departmentOptions} positions={positionOptions} canManageOrganization={canManageOrganization}/>
+        }
+        <div className="editor-actions">{editor.mode==='view'&&permission?.delete&&<button className="delete-profile" type="button" onClick={deleteEmployee} disabled={profileLoading || saving || deleting}>{deleting?'Deleting…':'Delete profile'}</button>}<span/><button className="secondary-action" type="button" onClick={closeEmployeeEditor} disabled={saving || deleting}>Close</button></div>
       </div></div>}
     </section>
   );
 }
 
-function EmployeeDetails({ employee }) {
-  const employment = [['Employee ID', employee.employeeNumber], ['Position', employee.jobTitle || 'Not assigned'], ['Department', employee.department || 'Not assigned'], ['Hire date', employee.hireDate ? new Date(`${String(employee.hireDate).slice(0,10)}T00:00:00`).toLocaleDateString(undefined,{year:'numeric',month:'long',day:'numeric'}) : 'Not provided']];
-  const personal = [['First name', employee.firstName], ['Last name', employee.lastName], ['Preferred name', employee.preferredName || 'Not provided'], ['Email address', employee.email], ['Phone number', employee.phone || 'Not provided']];
+function EmployeeDetails({ employee, onNavigate, canViewPayroll, canViewSchedule }) {
+  const employment = [
+    ['Employee ID', employee.employeeNumber], ['Employment status', String(employee.employmentStatus || 'active').replace('_', ' ')],
+    ['Position', employee.jobTitle || 'Not assigned'], ['Department', employee.department || 'Not assigned'],
+    ['Date hired', formatEmployeeDate(employee.hireDate)]
+  ];
+  const personal = [
+    ['First name', employee.firstName || 'Not provided'], ['Middle name', employee.middleName || 'Not provided'],
+    ['Last name', employee.lastName || 'Not provided'], ['Suffix', employee.suffix || 'Not provided'],
+    ['Preferred name', employee.preferredName || 'Not provided'], ['Date of birth', formatEmployeeDate(employee.dateOfBirth)],
+    ['Gender', String(employee.gender || 'Not provided').replaceAll('_', ' ')],
+    ['Civil status', String(employee.civilStatus || 'Not provided').replaceAll('_', ' ')],
+    ['Email address', employee.email || 'Not provided'], ['Contact number', employee.phone || 'Not provided'],
+    ['Address', employee.address || 'Not provided']
+  ];
   const emergency = [['Contact name', employee.emergencyContactName || '—'], ['Relationship', employee.emergencyContactRelationship || '—'], ['Phone number', employee.emergencyContactPhone || '—'], ['Alternate phone', employee.emergencyContactAlternatePhone || '—']];
-  const access = [['Account role', employee.roleName || 'Not assigned'], ['Login access', employee.hasLogin ? 'Enabled' : 'Not provisioned']];
-  const displayName = employee.preferredName || employee.firstName;
+  const loginAccess = employee.loginEnabled === true ? 'Enabled' : employee.hasLogin ? 'Disabled' : 'Not provisioned';
+  const access = [['Account role', employee.roleName || 'Not assigned'], ['Login access', loginAccess]];
+  const basicPay = employee.payroll?.basicPay;
+  const payroll = [
+    ['Basic pay', basicPay == null ? 'Not configured' : `₱${Number(basicPay).toLocaleString(undefined, { minimumFractionDigits:2, maximumFractionDigits:2 })}`],
+    ['Pay basis', employee.payroll?.payBasis ? String(employee.payroll.payBasis).replaceAll('_', ' ') : 'Not configured'],
+    ['Pay frequency', employee.payroll?.payFrequency ? String(employee.payroll.payFrequency).replaceAll('_', ' ') : 'Not configured']
+  ];
+  const workDays = Array.isArray(employee.workSchedule?.workDays) ? employee.workSchedule.workDays.map((day) => String(day).slice(0, 3)).join(', ') : '';
+  const schedule = [
+    ['Schedule', employee.workSchedule ? `${employee.workSchedule.shiftType || 'Scheduled'} · ${employee.workSchedule.startTime || '—'}–${employee.workSchedule.endTime || '—'}` : 'Not configured'],
+    ['Work days', workDays || 'Not configured']
+  ];
+  const displayName = [employee.preferredName || employee.firstName, employee.middleName, employee.lastName, employee.suffix].filter(Boolean).join(' ');
+  const showCompensation = canViewPayroll || canViewSchedule;
+  const status = String(employee.employmentStatus || 'active').replace('_', ' ');
   return <div className="employee-profile-sections friendly-profile">
-    <section className="employee-profile-hero"><i>{employee.firstName[0]}{employee.lastName[0]}</i><div><span>Employee profile</span><h2>{displayName} {employee.lastName}</h2><p>{employee.jobTitle||'No position assigned'} · {employee.department||'No department assigned'}</p></div><div className="profile-hero-badges"><b className={`employment-status status-${employee.employmentStatus}`}><i />{employee.employmentStatus.replace('_',' ')}</b><small>{employee.hasLogin?'Login enabled':'No login access'}</small></div></section>
-    <div className="employee-profile-highlights"><article><span>Employee ID</span><strong>{employee.employeeNumber}</strong></article><article><span>Email</span><strong>{employee.email}</strong></article><article><span>Phone</span><strong>{employee.phone||'Not provided'}</strong></article><article><span>Started</span><strong>{employee.hireDate?new Date(`${String(employee.hireDate).slice(0,10)}T00:00:00`).toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'}):'Not provided'}</strong></article></div>
-    <ProfileSection number="01" title="Employment" description="Role and organizational assignment" details={employment} />
-    <ProfileSection number="02" title="Personal and contact" description="Employee identity and contact details" details={personal} />
+    <section className="employee-profile-hero"><EmployeeAvatar employee={employee}/><div><span>Employee profile</span><h2>{displayName || 'Employee profile'}</h2><p>{employee.jobTitle||'No position assigned'} · {employee.department||'No department assigned'}</p></div><div className="profile-hero-badges"><b className={`employment-status status-${employee.employmentStatus || 'active'}`}><i />{status}</b><small>{loginAccess === 'Enabled' ? 'Login enabled' : loginAccess === 'Disabled' ? 'Login disabled' : 'No login access'}</small></div></section>
+    <div className="employee-profile-highlights"><article><span>Employee ID</span><strong>{employee.employeeNumber}</strong></article><article><span>Email</span><strong>{employee.email}</strong></article><article><span>Phone</span><strong>{employee.phone||'Not provided'}</strong></article><article><span>Started</span><strong>{formatEmployeeDate(employee.hireDate, { year:'numeric', month:'short', day:'numeric' })}</strong></article></div>
+    <ProfileSection number="01" title="Employment" description="Status and organizational assignment" details={employment} />
+    <ProfileSection number="02" title="Personal and contact" description="Identity and contact details" details={personal} />
     <ProfileSection number="03" title="Emergency contact" description="Who to contact in an emergency" details={emergency} />
-    <ProfileSection number="04" title="Account access" description="Application role and login availability" details={access} />
-    <section className="profile-section profile-document-section"><div className="profile-section-heading"><h3><span>05</span><i>Documents</i></h3><small>{employee.documents?.length||0} uploaded</small></div>{employee.documents?.length ? <ul className="profile-documents">{employee.documents.map((document) => <li key={document.id}><i>DOC</i><div><strong>{document.name}</strong><small>{(Number(document.size) / 1024 / 1024).toFixed(2)} MB · Uploaded {document.uploadedAt?new Date(document.uploadedAt).toLocaleDateString():'date unavailable'}</small></div><a href={`/api/workforce/documents/${document.id}/content`}>Download</a></li>)}</ul> : <div className="profile-empty-documents"><i>+</i><strong>No documents uploaded</strong><small>Documents can be added while editing this employee.</small></div>}</section>
+    {showCompensation && <section className="profile-section profile-source-section"><div className="profile-section-heading"><h3><span>04</span><i>Compensation and schedule</i></h3><small>Managed by the dedicated payroll and shift modules</small></div><div className="profile-source-details">{canViewPayroll&&<ProfileDetails details={payroll}/>} {canViewSchedule&&<ProfileDetails details={schedule}/>}</div><div className="profile-source-actions">{canViewPayroll&&<button type="button" onClick={()=>onNavigate('payroll_setup')}>Open Salary Setup</button>}{canViewSchedule&&<button type="button" onClick={()=>onNavigate('shift_management')}>Open Shift Management</button>}</div></section>}
+    <ProfileSection number={showCompensation ? '05' : '04'} title="Account access" description="Application role and login availability" details={access} />
+    <section className="profile-section profile-document-section"><div className="profile-section-heading"><h3><span>{showCompensation ? '06' : '05'}</span><i>Documents</i></h3><small>{employee.documents?.length||0} uploaded</small></div>{employee.documents?.length ? <ul className="profile-documents">{employee.documents.map((document) => <li key={document.id}><i>DOC</i><div><strong>{document.name}</strong><small>{(Number(document.size) / 1024 / 1024).toFixed(2)} MB · Uploaded {document.uploadedAt?new Date(document.uploadedAt).toLocaleDateString():'date unavailable'}</small></div><a href={`/api/workforce/documents/${document.id}/content`}>Download</a></li>)}</ul> : <div className="profile-empty-documents"><i>+</i><strong>No documents uploaded</strong><small>Documents can be added while editing this employee.</small></div>}</section>
   </div>;
 }
 
+function ProfileDetails({ details }) {
+  return <div className="employee-details">{details.map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}</div>;
+}
+
 function ProfileSection({ number, title, description, details }) {
-  return <section className="profile-section"><div className="profile-section-heading"><h3><span>{number}</span><i>{title}</i></h3><small>{description}</small></div><div className="employee-details">{details.map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}</div></section>;
+  return <section className="profile-section"><div className="profile-section-heading"><h3><span>{number}</span><i>{title}</i></h3><small>{description}</small></div><ProfileDetails details={details}/></section>;
 }
 
-const emptyDepartment = { name: '', description: '', managerId: '', assistantManagerId: '', memberIds: [] };
 
-function Departments({ user }) {
-  const [departments, setDepartments] = useState([]);
-  const [employees, setEmployees] = useState([]);
-  const [editor, setEditor] = useState(null);
-  const [form, setForm] = useState(emptyDepartment);
-  const [message, setMessage] = useModalMessage();
-  const [saving, setSaving] = useState(false);
-  const permission = effectiveModulePermission(user,'departments');
+function employeeName(employee) { return employee ? [employee.preferredName || employee.firstName, employee.lastName].filter(Boolean).join(' ') || '—' : '—'; }
 
-  async function loadData() {
-    const [departmentResponse, employeeResponse] = await Promise.all([fetch('/api/departments'), fetch('/api/departments/employees')]);
-    const departmentData = await departmentResponse.json();
-    const employeeData = await employeeResponse.json();
-    if (!departmentResponse.ok || !employeeResponse.ok) throw new Error(departmentData.error || employeeData.error || 'Unable to load departments.');
-    setDepartments(departmentData.departments);
-    setEmployees(employeeData.employees);
-  }
 
-  useEffect(() => { loadData().catch((error) => setMessage(error.message)); }, []);
-
-  function formFromDepartment(department) {
-    return { name: department.name, description: department.description || '', managerId: department.manager ? String(department.manager.id) : '', assistantManagerId: department.assistantManager ? String(department.assistantManager.id) : '', memberIds: department.teamMembers.map((employee) => String(employee.id)) };
-  }
-
-  function openCreate() { setForm(emptyDepartment); setEditor({ mode: 'create' }); setMessage(''); }
-  function openDepartment(department) { setForm(formFromDepartment(department)); setEditor({ mode: 'view', department }); setMessage(''); }
-  function beginEdit() { setForm(formFromDepartment(editor.department)); setEditor((current) => ({ ...current, mode: 'edit' })); setMessage(''); }
-  function updateField(event) { setForm((current) => ({ ...current, [event.target.name]: event.target.value })); }
-
-  function updateLeader(field, value) {
-    const otherField = field === 'managerId' ? 'assistantManagerId' : 'managerId';
-    setForm((current) => ({ ...current, [field]: value, [otherField]: value && current[otherField] === value ? '' : current[otherField], memberIds: current.memberIds.filter((id) => id !== value) }));
-  }
-
-  function toggleMember(employeeId) {
-    setForm((current) => ({ ...current, memberIds: current.memberIds.includes(employeeId) ? current.memberIds.filter((id) => id !== employeeId) : [...current.memberIds, employeeId] }));
-  }
-
-  async function saveDepartment(event) {
-    event.preventDefault(); setSaving(true); setMessage('');
-    const editing = editor.mode === 'edit';
-    try {
-      const response = await fetch(editing ? `/api/departments/${editor.department.id}` : '/api/departments', { method: editing ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Unable to save department.');
-      await loadData(); setEditor({ mode: 'view', department: data.department }); setForm(formFromDepartment(data.department)); setMessage(editing ? 'Department updated.' : 'Department created.');
-    } catch (error) { setMessage(error.message); }
-    finally { setSaving(false); }
-  }
-
-  async function deleteDepartment() {
-    if (!await confirmModal(`Delete ${editor.department.name}? Employee assignments will be cleared.`, 'Delete department?')) return;
-    const response = await fetch(`/api/departments/${editor.department.id}`, { method: 'DELETE' });
-    if (!response.ok) return setMessage((await response.json()).error || 'Unable to delete department.');
-    setEditor(null); await loadData(); setMessage('Department deleted.');
-  }
-
-  return <section className="departments-view">
-    <div className="module-title"><div><span>Organization</span><h1>Departments</h1><p>Organize employees into teams and assign department leadership.</p></div>{permission?.create && <button onClick={openCreate}>+ Add department</button>}</div>
-    <div className="department-table"><div className="department-row department-head"><span>Department</span><span>Manager</span><span>Assistant manager</span><span>Team members</span></div>{departments.map((department) => <button type="button" className="department-row" key={department.id} onClick={() => openDepartment(department)}><div><strong>{department.name}</strong><small>{department.description || 'No description'}</small></div><span>{employeeName(department.manager)}</span><span>{employeeName(department.assistantManager)}</span><span>{department.teamMembers.length}</span></button>)}{!departments.length && <div className="empty-departments"><strong>No departments created</strong><small>Create a department to begin assigning employees.</small></div>}</div>
-    {editor && <div className="employee-modal" role="dialog" aria-modal="true" aria-labelledby="department-editor-title"><button className="modal-scrim" onClick={() => setEditor(null)} aria-label="Close" /><div className="employee-editor department-editor"><div className="editor-header"><div><span>{editor.mode === 'create' ? 'New department' : editor.mode === 'edit' ? 'Edit department' : 'Department profile'}</span><h2 id="department-editor-title">{editor.mode === 'create' ? 'Add department' : form.name}</h2></div><button onClick={() => setEditor(null)} aria-label="Close">×</button></div>{message && <p className="rbac-message" role="status">{message}</p>}{editor.mode === 'view' ? <DepartmentDetails department={editor.department} /> : <DepartmentForm form={form} employees={employees} updateField={updateField} updateLeader={updateLeader} toggleMember={toggleMember} onSubmit={saveDepartment} saving={saving} />}<div className="editor-actions">{editor.mode === 'view' && permission?.delete && <button className="delete-profile" onClick={deleteDepartment}>Delete department</button>}<span /><button className="secondary-action" onClick={() => setEditor(null)}>Close</button>{editor.mode === 'view' && permission?.update && <button className="primary-action" onClick={beginEdit}>Edit department</button>}</div></div></div>}
-  </section>;
-}
-
-function employeeName(employee) { return employee ? `${employee.preferredName || employee.firstName} ${employee.lastName}` : '—'; }
-
-function DepartmentDetails({ department }) {
-  return <div className="department-profile"><section><span>Description</span><p>{department.description || 'No description provided.'}</p></section><div className="department-leaders"><article><span>Manager</span><strong>{employeeName(department.manager)}</strong><small>{department.manager?.jobTitle || 'Not assigned'}</small></article><article><span>Assistant manager</span><strong>{employeeName(department.assistantManager)}</strong><small>{department.assistantManager?.jobTitle || 'Not assigned'}</small></article></div><section><span>Team members · {department.teamMembers.length}</span>{department.teamMembers.length ? <div className="department-member-list">{department.teamMembers.map((employee) => <article key={employee.id}><i>{employee.firstName[0]}{employee.lastName[0]}</i><div><strong>{employeeName(employee)}</strong><small>{employee.jobTitle || employee.email}</small></div></article>)}</div> : <p>No team members assigned.</p>}</section></div>;
-}
-
-function DepartmentForm({ form, employees, updateField, updateLeader, toggleMember, onSubmit, saving }) {
-  const [memberSearch, setMemberSearch] = useState('');
-  const selectedMembers = employees.filter((employee) => form.memberIds.includes(String(employee.id)));
-  const searchValue = memberSearch.trim().toLowerCase();
-  const filteredEmployees = employees.filter((employee) => !searchValue || [employeeName(employee), employee.employeeNumber, employee.jobTitle, employee.email].some((value) => String(value || '').toLowerCase().includes(searchValue)));
-
-  return <form className="department-form" onSubmit={onSubmit}><div className="department-form-grid"><label><span>Department name *</span><input name="name" value={form.name} onChange={updateField} required maxLength="120" /></label><label><span>Description</span><input name="description" value={form.description} onChange={updateField} maxLength="1000" placeholder="Purpose or responsibility" /></label></div><fieldset><legend>Leadership</legend><div className="department-form-grid"><label><span>Manager</span><select value={form.managerId} onChange={(event) => updateLeader('managerId', event.target.value)}><option value="">Not assigned</option>{employees.map((employee) => <option value={employee.id} key={employee.id}>{employeeName(employee)} · {employee.employeeNumber}</option>)}</select></label><label><span>Assistant manager</span><select value={form.assistantManagerId} onChange={(event) => updateLeader('assistantManagerId', event.target.value)}><option value="">Not assigned</option>{employees.map((employee) => <option value={employee.id} key={employee.id}>{employeeName(employee)} · {employee.employeeNumber}</option>)}</select></label></div></fieldset><fieldset><legend>Team members</legend>
-    <div className="selected-member-area"><div><strong>Added team members</strong><span>{selectedMembers.length} selected</span></div>{selectedMembers.length ? <div className="selected-member-chips">{selectedMembers.map((employee) => <span key={employee.id}>{employeeName(employee)}<button type="button" onClick={() => toggleMember(String(employee.id))} aria-label={`Remove ${employeeName(employee)}`}>×</button></span>)}</div> : <p>No team members added yet.</p>}</div>
-    <label className="member-search"><span>Search registered employees</span><div><b>⌕</b><input value={memberSearch} onChange={(event) => setMemberSearch(event.target.value)} placeholder="Search by name, ID, role, or email…" /></div></label>
-    <div className="member-picker">{filteredEmployees.map((employee) => { const employeeId = String(employee.id); const isLeader = employeeId === form.managerId || employeeId === form.assistantManagerId; return <label className={isLeader ? 'leader-selected' : ''} key={employee.id}><input type="checkbox" checked={form.memberIds.includes(employeeId)} disabled={isLeader} onChange={() => toggleMember(employeeId)} /><i>{employee.firstName[0]}{employee.lastName[0]}</i><span><strong>{employeeName(employee)}</strong><small>{isLeader ? 'Assigned as leader' : employee.jobTitle || employee.email}</small></span></label>; })}{!filteredEmployees.length && <p className="no-member-results">No registered employees match your search.</p>}</div>
-  </fieldset><button className="form-save" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save department'}</button></form>;
-}
-
-function EmployeeForm({ form, mode, updateField, onSubmit, saving, roles }) {
+function EmployeeForm({ form, mode, updateField, onSubmit, saving, roles, departments, positions, canManageOrganization }) {
   const [documents, setDocuments] = useState([]);
   const [documentError, setDocumentError] = useState('');
+  const [profilePicture, setProfilePicture] = useState({ preview:'', base64:'', mimeType:'', clear:false });
+  const [profilePictureError, setProfilePictureError] = useState('');
+
+  useEffect(() => {
+    setDocuments([]);
+    setDocumentError('');
+    setProfilePicture({ preview:'', base64:'', mimeType:'', clear:false });
+    setProfilePictureError('');
+  }, [form.id, form.profilePictureUrl]);
 
   function generateTemporaryPassword() {
     const groups = ['ABCDEFGHJKLMNPQRSTUVWXYZ', 'abcdefghijkmnopqrstuvwxyz', '23456789', '!@#$%&*?'];
@@ -1697,33 +2251,90 @@ function EmployeeForm({ form, mode, updateField, onSubmit, saving, roles }) {
     setDocuments(selected);
   }
 
-  return <form className="employee-form" id="employee-form" onSubmit={(event) => onSubmit(event, documents)}>
-    <fieldset className="form-section"><legend><span>01</span><div><strong>Personal information</strong><small>Basic identity and contact details</small></div></legend><div className="form-section-grid">
-    {mode === 'edit' && <label><span>Employment status</span><select name="employmentStatus" value={form.employmentStatus} onChange={updateField}><option value="active">Active</option><option value="inactive">Inactive</option></select></label>}
-    <label><span>First name *</span><input name="firstName" value={form.firstName} onChange={updateField} required /></label>
-    <label><span>Last name *</span><input name="lastName" value={form.lastName} onChange={updateField} required /></label>
-    <label><span>Preferred name</span><input name="preferredName" value={form.preferredName} onChange={updateField} /></label>
-    <label><span>Phone</span><input name="phone" value={form.phone} onChange={updateField} /></label>
-    <label><span>Hire date</span><input type="date" name="hireDate" value={form.hireDate || ''} onChange={updateField} /></label>
+  function markDocumentUploaded(uploadedDocument) {
+    setDocuments((current) => current.filter((document) => document !== uploadedDocument));
+  }
+
+  function selectProfilePicture(event) {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+    if (!allowedTypes.includes(file.type)) {
+      setProfilePictureError('Choose a PNG, JPEG, or WebP image.');
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      setProfilePictureError(`${file.name} exceeds the 2 MB profile-picture limit.`);
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || '');
+      const base64 = result.includes(',') ? result.split(',')[1] : '';
+      if (!base64) {
+        setProfilePictureError('Unable to read the selected profile picture.');
+        return;
+      }
+      setProfilePicture({ preview:result, base64, mimeType:file.type, clear:false });
+      setProfilePictureError('');
+    };
+    reader.onerror = () => setProfilePictureError('Unable to read the selected profile picture.');
+    reader.readAsDataURL(file);
+  }
+
+  function removeProfilePicture() {
+    setProfilePicture({ preview:'', base64:'', mimeType:'', clear:Boolean(form.hasProfilePicture || form.profilePictureUrl) });
+    setProfilePictureError('');
+  }
+
+  const pictureUrl = profilePicture.preview || (profilePicture.clear ? '' : form.profilePictureUrl);
+  const assignmentCount = Number(form.assignmentCount || 0);
+  const assignmentIsComplex = assignmentCount > 1;
+  const hasCurrentAssignment = assignmentCount === 1;
+  const assignmentDisabled = form.employmentStatus !== 'active';
+  const hasDepartment = Boolean(String(form.departmentId || ''));
+  const hasPosition = Boolean(String(form.positionId || ''));
+  const assignmentIncomplete = canManageOrganization && !assignmentIsComplex && hasDepartment !== hasPosition;
+  const assignmentRemovalBlocked = canManageOrganization && hasCurrentAssignment && (!hasDepartment || !hasPosition);
+
+  return <form className="employee-form" id="employee-form" onSubmit={(event) => onSubmit(event, documents, profilePicture, markDocumentUploaded)}>
+    <fieldset className="form-section profile-picture-section"><legend><span>01</span><div><strong>Profile picture</strong><small>Shown in the employee directory and profile</small></div></legend><div className="profile-picture-picker"><EmployeeAvatar employee={{ ...form, profilePictureUrl:pictureUrl }} className="employee-avatar-editor"/><div><strong>Employee photo</strong><small>PNG, JPEG, or WebP · maximum 2 MB</small><div className="profile-picture-actions"><label className="secondary-action"><span>{pictureUrl ? 'Replace picture' : 'Upload picture'}</span><input type="file" accept="image/png,image/jpeg,image/webp" onChange={selectProfilePicture}/></label>{pictureUrl && <button className="secondary-action" type="button" onClick={removeProfilePicture}>Remove picture</button>}</div>{profilePictureError&&<p className="document-error" role="alert">{profilePictureError}</p>}</div></div></fieldset>
+    <fieldset className="form-section"><legend><span>02</span><div><strong>Personal information</strong><small>Identity, contact details, and demographics</small></div></legend><div className="form-section-grid">
+      <label><span>First name *</span><input name="firstName" value={form.firstName} onChange={updateField} maxLength="100" required /></label>
+      <label><span>Middle name</span><input name="middleName" value={form.middleName || ''} onChange={updateField} maxLength="100" /></label>
+      <label><span>Last name *</span><input name="lastName" value={form.lastName} onChange={updateField} maxLength="100" required /></label>
+      <label><span>Suffix</span><input name="suffix" value={form.suffix || ''} onChange={updateField} maxLength="30" placeholder="Jr., Sr., III" /></label>
+      <label><span>Preferred name</span><input name="preferredName" value={form.preferredName} onChange={updateField} maxLength="100" /></label>
+      <label><span>Date of birth</span><input type="date" name="dateOfBirth" value={form.dateOfBirth || ''} onChange={updateField} max={localDateValue(new Date())} /></label>
+      <label><span>Gender</span><select name="gender" value={form.gender || ''} onChange={updateField}><option value="">Prefer not to specify</option><option value="female">Female</option><option value="male">Male</option><option value="non_binary">Non-binary</option><option value="prefer_not_to_say">Prefer not to say</option></select></label>
+      <label><span>Civil status</span><select name="civilStatus" value={form.civilStatus || ''} onChange={updateField}><option value="">Prefer not to specify</option><option value="single">Single</option><option value="married">Married</option><option value="widowed">Widowed</option><option value="separated">Separated</option><option value="annulled">Annulled</option><option value="prefer_not_to_say">Prefer not to say</option></select></label>
+      <label><span>Email address *</span><input type="email" name="email" value={form.email} onChange={updateField} maxLength="254" required autoComplete="email" /></label>
+      <label><span>Contact number</span><input type="tel" name="phone" value={form.phone || ''} onChange={updateField} maxLength="40" placeholder="e.g. +63 912 345 6789" /></label>
+      <label className="form-span-two"><span>Address</span><textarea name="address" value={form.address || ''} onChange={updateField} maxLength="600" rows="3" placeholder="House number, street, barangay, city, province" /></label>
     </div></fieldset>
-    <div className="organization-assignment-note"><i>i</i><span><strong>Position and department are managed in Organization</strong><small>After saving this employee, open Setup → Organization → Assignments to place them in the company structure and select their direct manager.</small></span></div>
-    <fieldset className="form-section"><legend><span>02</span><div><strong>Emergency contact</strong><small>Who to contact in case of an emergency</small></div></legend><div className="form-section-grid">
-      <label><span>Contact name</span><input name="emergencyContactName" value={form.emergencyContactName || ''} onChange={updateField} placeholder="Full name" /></label>
-      <label><span>Relationship</span><input name="emergencyContactRelationship" value={form.emergencyContactRelationship || ''} onChange={updateField} placeholder="e.g. Spouse, parent" /></label>
-      <label><span>Phone number</span><input type="tel" name="emergencyContactPhone" value={form.emergencyContactPhone || ''} onChange={updateField} placeholder="Primary phone number" /></label>
-      <label><span>Alternate phone</span><input type="tel" name="emergencyContactAlternatePhone" value={form.emergencyContactAlternatePhone || ''} onChange={updateField} placeholder="Optional" /></label>
+    <fieldset className="form-section"><legend><span>03</span><div><strong>Employment and organization</strong><small>Company record and organizational assignment</small></div></legend><div className="form-section-grid">
+      <label><span>Employee ID</span><input value={form.employeeNumber || 'Generated when saved'} readOnly aria-readonly="true" /></label>
+      {mode === 'edit' && <label><span>Employment status</span><select name="employmentStatus" value={form.employmentStatus} onChange={updateField}><option value="active">Active</option><option value="inactive">Inactive</option></select></label>}
+      <label><span>Date hired *</span><input type="date" name="hireDate" value={form.hireDate || ''} onChange={updateField} required /></label>
+      {canManageOrganization && !assignmentIsComplex && <><label><span>Department</span><select name="departmentId" value={form.departmentId || ''} onChange={updateField} disabled={assignmentDisabled || !departments.length} required={hasDepartment || hasPosition}><option value="" disabled={hasCurrentAssignment}>{departments.length ? hasCurrentAssignment ? 'Use Organization to remove assignment' : 'Select a department' : 'No departments available'}</option>{departments.map((department)=><option value={department.id} key={department.id}>{department.name}</option>)}</select></label><label><span>Position / job title</span><select name="positionId" value={form.positionId || ''} onChange={updateField} disabled={assignmentDisabled || !positions.length} required={hasDepartment || hasPosition}><option value="" disabled={hasCurrentAssignment}>{positions.length ? hasCurrentAssignment ? 'Use Organization to remove assignment' : 'Select a position' : 'No positions available'}</option>{positions.map((position)=><option value={position.id} key={position.id}>{position.name}</option>)}</select></label></>}
+    </div>{assignmentIncomplete&&<p className="document-error assignment-validation-error" role="alert">Select both a department and a position before saving.</p>}{assignmentRemovalBlocked&&<p className="document-error assignment-validation-error" role="alert">Remove an existing assignment from Setup → Organization.</p>}{canManageOrganization && assignmentIsComplex ? <div className="organization-assignment-note"><i>i</i><span><strong>Multiple active assignments</strong><small>This employee belongs to more than one department. Manage their assignments in Setup → Organization to preserve the existing structure.</small></span></div> : canManageOrganization && assignmentDisabled ? <div className="organization-assignment-note"><i>i</i><span><strong>Assignment changes are unavailable for inactive employees</strong><small>Set the employee to Active before changing their department or position. Remove an existing assignment in Setup → Organization.</small></span></div> : canManageOrganization ? <div className="organization-assignment-note"><i>i</i><span><strong>Department and position use the company organization records</strong><small>Select both fields to assign this employee. Existing assignments can be changed here, but removal, managers, and multi-department assignments remain in Setup → Organization.</small></span></div> : <div className="organization-assignment-note"><i>i</i><span><strong>Organization assignment is access-controlled</strong><small>Department and position are displayed on the profile. An authorized administrator can update the company structure in Setup → Organization.</small></span></div>}</fieldset>
+    <fieldset className="form-section"><legend><span>04</span><div><strong>Emergency contact</strong><small>Who to contact in case of an emergency</small></div></legend><div className="form-section-grid">
+      <label><span>Contact name</span><input name="emergencyContactName" value={form.emergencyContactName || ''} onChange={updateField} maxLength="200" placeholder="Full name" /></label>
+      <label><span>Relationship</span><input name="emergencyContactRelationship" value={form.emergencyContactRelationship || ''} onChange={updateField} maxLength="100" placeholder="Spouse or parent" /></label>
+      <label><span>Phone number</span><input type="tel" name="emergencyContactPhone" value={form.emergencyContactPhone || ''} onChange={updateField} maxLength="40" placeholder="Primary phone number" /></label>
+      <label><span>Alternate phone</span><input type="tel" name="emergencyContactAlternatePhone" value={form.emergencyContactAlternatePhone || ''} onChange={updateField} maxLength="40" placeholder="Optional" /></label>
     </div></fieldset>
-    <fieldset className="form-section"><legend><span>03</span><div><strong>Access Control</strong><small>Configure account credentials and permissions</small></div></legend><div className="form-section-grid">
-      <label><span>Email *</span><input type="email" name="email" value={form.email} onChange={updateField} required autoComplete="email" /></label>
-      <label><span>Account role *</span><select name="roleId" value={form.roleId || ''} onChange={updateField} required disabled={!roles.length}><option value="" disabled>{roles.length ? 'Select a role' : 'Loading roles…'}</option>{roles.map((role) => <option value={role.id} key={role.id}>{role.name}</option>)}</select><small>Determines this employee's access permissions.</small></label>
+    <fieldset className="form-section"><legend><span>05</span><div><strong>System access</strong><small>Configure account credentials and permissions</small></div></legend><div className="form-section-grid">
+      <label><span>Role / system access *</span><select name="roleId" value={form.roleId || ''} onChange={updateField} required disabled={!roles.length}><option value="" disabled>{roles.length ? 'Select a role' : 'Loading roles…'}</option>{roles.map((role) => <option value={role.id} key={role.id} disabled={role.assignable === false && String(role.id) !== String(form.roleId || '')}>{role.name}{role.assignable === false && String(role.id) !== String(form.roleId || '') ? ' (managed in Roles & Access)' : ''}</option>)}</select><small>Determines this employee's access permissions.</small></label>
       <div className="password-input"><label htmlFor="temporary-password"><span>{mode === 'create' || !form.hasLogin ? 'Temporary password *' : 'New password (optional)'}</span></label><div className="password-control"><input id="temporary-password" type="text" name="temporaryPassword" value={form.temporaryPassword || ''} onChange={updateField} minLength="8" required={mode === 'create' || !form.hasLogin} autoComplete="new-password" placeholder="At least 8 characters" /><button type="button" onClick={generateTemporaryPassword}>Generate password</button></div><small>{mode === 'create' || !form.hasLogin ? 'The employee will use this password for their first login.' : 'Leave blank to keep the current password.'}</small></div>
     </div></fieldset>
-    {mode === 'edit' && <fieldset className="form-section document-section"><legend><span>04</span><div><strong>Documents</strong><small>Add identification and employment records</small></div></legend>
+    {mode === 'edit' && <fieldset className="form-section document-section"><legend><span>06</span><div><strong>Documents</strong><small>Add identification and employment records</small></div></legend>
       <label className="document-dropzone"><input type="file" multiple accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" onChange={selectDocuments} /><b aria-hidden="true">↑</b><strong>Choose files to upload</strong><small>PDF, DOC, DOCX, JPG or PNG · 10 MB maximum each</small></label>
       {documentError && <p className="document-error" role="alert">{documentError}</p>}
       {documents.length > 0 && <ul className="selected-documents" aria-label="Selected documents">{documents.map((file) => <li key={`${file.name}-${file.lastModified}`}><span>{file.name}</span><small>{(file.size / 1024 / 1024).toFixed(2)} MB</small></li>)}</ul>}
     </fieldset>}
-    <button className="form-save" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save employee'}</button>
+    <button className="form-save" type="submit" disabled={saving || assignmentIncomplete || assignmentRemovalBlocked}>{saving ? 'Saving…' : 'Save employee'}</button>
   </form>;
 }
 
@@ -1814,7 +2425,7 @@ function RoleAccess({ user }) {
     <section className="rbac-view friendly-rbac">
       <div className="module-title"><div><span>Administration</span><h1>Roles & Access</h1><p>Choose a role, then decide which areas and actions its users can access.</p></div>{permission?.create&&<button onClick={()=>setCreating(!creating)}>{creating?'Cancel':'+ New role'}</button>}</div>
       <div className="rbac-overview"><article><span>Total roles</span><strong>{roles.length}</strong><small>Available access profiles</small></article><article><span>System roles</span><strong>{roles.filter((role)=>role.isSystem).length}</strong><small>Protected defaults</small></article><article><span>Custom roles</span><strong>{roles.filter((role)=>!role.isSystem).length}</strong><small>Created by administrators</small></article><article><span>Modules</span><strong>{modules.length}</strong><small>Permission-controlled areas</small></article></div>
-      {creating&&<form className="new-role-form friendly-new-role" onSubmit={createRole}><div><span>Create access profile</span><h2>New role</h2><p>Give the role a recognizable name and explain who should receive it.</p></div><label><span>Role name *</span><input name="name" placeholder="For example: Payroll Manager" required autoFocus/></label><label><span>Description</span><input name="description" placeholder="What should users with this role be responsible for?"/></label><button type="submit">Create and configure</button></form>}
+      {creating&&<form className="new-role-form friendly-new-role" onSubmit={createRole}><div><span>Create access profile</span><h2>New role</h2><p>Give the role a recognizable name and explain who should receive it.</p></div><label><span>Role name *</span><input name="name" placeholder="Payroll Manager" required autoFocus/></label><label><span>Description</span><input name="description" placeholder="What should users with this role be responsible for?"/></label><button type="submit">Create and configure</button></form>}
       <div className="rbac-layout">
         <aside className="role-list"><div className="role-list-heading"><span>Roles</span><b>{filteredRoles.length}</b></div><div className="role-search"><span>⌕</span><input value={roleSearch} onChange={(event)=>setRoleSearch(event.target.value)} placeholder="Find a role…" aria-label="Find a role"/></div><div className="role-list-items">{filteredRoles.map((role)=><button className={String(role.id)===String(selectedId)?'selected':''} onClick={()=>selectRole(role)} key={role.id}><span><strong>{role.name}</strong><small>{role.description||'No description provided'}</small></span>{role.isSystem?<i>System</i>:<i>Custom</i>}</button>)}{!filteredRoles.length&&<p>No roles match your search.</p>}</div></aside>
         <div className="permission-panel">

@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { hasPermission, normalizePermissionHierarchy, parentModuleByChild } from '../src/auth/authorization.js';
+import {
+  canAssignWorkforceRole,
+  hasPermission,
+  normalizePermissionHierarchy,
+  parentModuleByChild
+} from '../src/auth/authorization.js';
 
 function userWith(...permissions) {
   return { permissions: permissions.map(([moduleKey, operations]) => ({ moduleKey, ...operations })) };
@@ -57,4 +62,25 @@ test('normalizes enabled child operations onto their parent', () => {
   assert.deepEqual(parent, {
     moduleKey:'time_tracking', create:true, view:true, update:true, delete:true
   });
+});
+
+test('preserves the normal Employee role workflow without role-management access', () => {
+  const workforceEditor = userWith(
+    ['workforce_module', { update:true }],
+    ['workforce', { update:true }]
+  );
+
+  assert.equal(canAssignWorkforceRole(workforceEditor, { id:'2', name:'Employee' }), true);
+  assert.equal(canAssignWorkforceRole(workforceEditor, { id:'3', name:'HR Manager' }), false);
+  assert.equal(canAssignWorkforceRole(workforceEditor, { id:'3', name:'HR Manager' }, '3'), true);
+});
+
+test('requires role-management access before assigning a non-default workforce role', () => {
+  const roleManager = userWith(
+    ['setup', { update:true }],
+    ['roles', { update:true }]
+  );
+
+  assert.equal(canAssignWorkforceRole(roleManager, { id:'3', name:'HR Manager' }), true);
+  assert.equal(canAssignWorkforceRole(roleManager, { id:'1', name:'Administrator' }), false);
 });

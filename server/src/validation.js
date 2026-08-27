@@ -1,5 +1,6 @@
 export function isPositiveInteger(value) {
-  return /^\d+$/.test(String(value)) && Number(value) > 0;
+  const number = Number(value);
+  return /^\d+$/.test(String(value)) && Number.isSafeInteger(number) && number > 0;
 }
 
 export function isEmail(value) {

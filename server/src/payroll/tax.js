@@ -1,10 +1,10 @@
 export function calculateProgressiveTax(income,exemptionAmount,brackets){const taxableIncome=Math.max(0,Number(income)-Number(exemptionAmount||0));const bracket=[...brackets].sort((a,b)=>Number(a.lowerBound)-Number(b.lowerBound)).find(item=>taxableIncome>=Number(item.lowerBound)&&(item.upperBound==null||taxableIncome<Number(item.upperBound)));if(!bracket)return{taxableIncome,tax:0,bracket:null};const tax=Number(bracket.baseTax||0)+Math.max(0,taxableIncome-Number(bracket.lowerBound))*Number(bracket.ratePercent)/100;return{taxableIncome,tax:Math.round(tax*100)/100,bracket};}
 
-export function calculatePhilippineWithholding({regularCompensation=0,supplementaryCompensation=0,nonTaxableCompensation=0,mandatoryContributions=0,taxStatus='taxable',isMinimumWageEarner=false,frequency='monthly',brackets=[]}){
+export function calculatePhilippineWithholding({regularCompensation=0,supplementaryCompensation=0,nonTaxableCompensation=0,mandatoryContributions=0,exemptionAmount=0,taxStatus='taxable',isMinimumWageEarner=false,frequency='monthly',brackets=[]}){
   const regular=isMinimumWageEarner?0:Number(regularCompensation||0);
   const taxableIncome=taxStatus==='exempt'?0:Math.max(0,regular+Number(supplementaryCompensation||0)-Number(nonTaxableCompensation||0)-Number(mandatoryContributions||0));
-  const divisor=frequency==='biweekly'?2:1;const result=calculateProgressiveTax(taxableIncome/divisor,0,brackets);
-  return{grossCompensation:Number(regularCompensation||0)+Number(supplementaryCompensation||0),taxableIncome,tax:Math.round(result.tax*divisor*100)/100,mandatoryContributions:Number(mandatoryContributions||0),nonTaxableCompensation:Number(nonTaxableCompensation||0),bracket:result.bracket};
+  const divisor=frequency==='biweekly'?2:1;const result=calculateProgressiveTax(taxableIncome/divisor,exemptionAmount,brackets);
+  return{grossCompensation:Number(regularCompensation||0)+Number(supplementaryCompensation||0),taxableIncome:result.taxableIncome*divisor,tax:Math.round(result.tax*divisor*100)/100,mandatoryContributions:Number(mandatoryContributions||0),nonTaxableCompensation:Number(nonTaxableCompensation||0),bracket:result.bracket};
 }
 
 export function calculateAnnualizedTax(taxableCompensation){return calculateProgressiveTax(taxableCompensation,0,[{lowerBound:0,upperBound:250000,baseTax:0,ratePercent:0},{lowerBound:250000,upperBound:400000,baseTax:0,ratePercent:15},{lowerBound:400000,upperBound:800000,baseTax:22500,ratePercent:20},{lowerBound:800000,upperBound:2000000,baseTax:102500,ratePercent:25},{lowerBound:2000000,upperBound:8000000,baseTax:402500,ratePercent:30},{lowerBound:8000000,upperBound:null,baseTax:2202500,ratePercent:35}]).tax;}

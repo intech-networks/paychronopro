@@ -75,16 +75,27 @@ CREATE TABLE IF NOT EXISTS employee_profiles (
   user_id BIGINT UNIQUE REFERENCES users(id) ON DELETE SET NULL,
   employee_number TEXT NOT NULL UNIQUE,
   first_name TEXT NOT NULL,
+  middle_name TEXT NOT NULL DEFAULT '' CHECK (LENGTH(middle_name) <= 100),
   last_name TEXT NOT NULL,
+  suffix TEXT NOT NULL DEFAULT '' CHECK (LENGTH(suffix) <= 30),
   preferred_name TEXT NOT NULL DEFAULT '',
   email TEXT NOT NULL UNIQUE,
   phone TEXT NOT NULL DEFAULT '',
+  address TEXT NOT NULL DEFAULT '' CHECK (LENGTH(address) <= 600),
+  date_of_birth DATE,
+  gender TEXT NOT NULL DEFAULT '' CHECK (gender IN ('', 'female', 'male', 'non_binary', 'prefer_not_to_say')),
+  civil_status TEXT NOT NULL DEFAULT '' CHECK (civil_status IN ('', 'single', 'married', 'widowed', 'separated', 'annulled', 'prefer_not_to_say')),
   job_title TEXT NOT NULL DEFAULT '',
   hire_date DATE,
   employment_status TEXT NOT NULL DEFAULT 'active'
     CHECK (employment_status IN ('active', 'inactive')),
+  profile_picture_data BYTEA,
+  profile_picture_mime_type TEXT CHECK (profile_picture_mime_type IS NULL OR profile_picture_mime_type IN ('image/jpeg', 'image/png', 'image/webp')),
+  profile_picture_updated_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CHECK ((profile_picture_data IS NULL) = (profile_picture_mime_type IS NULL)),
+  CHECK (profile_picture_data IS NULL OR OCTET_LENGTH(profile_picture_data) BETWEEN 1 AND 2097152)
 );
 
 ALTER TABLE employee_profiles

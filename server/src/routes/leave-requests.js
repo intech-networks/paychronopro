@@ -3,6 +3,7 @@ import { pool } from '../db/pool.js';
 import { requirePermission } from '../auth/authorization.js';
 import { isIsoDate, isPositiveInteger } from '../validation.js';
 import { countLeaveWorkDays } from '../time/leave-days.js';
+import { holidayOccurrencesByDate } from '../calendar/service.js';
 
 export const leaveRequestsRouter = Router();
 const validLeaveTypes = new Set(['vacation', 'sick', 'emergency']);
@@ -241,11 +242,12 @@ leaveRequestsRouter.post('/', ...requirePermission('leave_application', 'create'
       transactionStarted = false;
       return response.status(404).json({ error: 'Your active employee profile is not linked to this account.' });
     }
-    const requestedDays = countLeaveWorkDays(startDate, endDate, employeeResult.rows[0].workDays);
+    const holidaysByDate = await holidayOccurrencesByDate({ startDate, endDate, client });
+    const requestedDays = countLeaveWorkDays(startDate, endDate, employeeResult.rows[0].workDays, holidaysByDate.keys());
     if (!requestedDays) {
       await client.query('ROLLBACK');
       transactionStarted = false;
-      return response.status(400).json({ error: 'The selected range contains only rest days.' });
+      return response.status(400).json({ error: 'The selected range contains only rest days or company holidays.' });
     }
     const approverResult = await client.query(
         `SELECT manager.id
@@ -253,7 +255,8 @@ leaveRequestsRouter.post('/', ...requirePermission('leave_application', 'create'
          JOIN employee_profiles manager ON manager.id=requester_assignment.manager_employee_id
          JOIN users manager_user ON manager_user.id=manager.user_id AND manager_user.is_active=TRUE
          WHERE requester_assignment.employee_id=$1
-           AND requester_assignment.effective_to IS NULL
+           AND requester_assignment.effective_from<=CURRENT_DATE
+           AND (requester_assignment.effective_to IS NULL OR requester_assignment.effective_to>=CURRENT_DATE)
            AND manager.employment_status='active'
          LIMIT 1`,
         [employeeResult.rows[0].id]

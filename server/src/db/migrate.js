@@ -2,15 +2,34 @@ import { readFile, readdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import bcrypt from 'bcryptjs';
 import { pool } from './pool.js';
-import { config } from '../config.js';
+import { config, databaseSchemaIdentifier } from '../config.js';
 
 const migrationPath = fileURLToPath(new URL('../../../database/init.sql', import.meta.url));
 const migrationsDirectory = fileURLToPath(new URL('../../../database/migrations', import.meta.url));
+const demoDataMigrationFiles = new Set([
+  '051_seed_dummy_time_entry_exceptions.sql',
+  '052_refresh_dummy_time_entry_patterns.sql',
+  '056_seed_valid_employee_time_entries.sql',
+  '057_seed_valid_time_entries_august_1_15_2026.sql'
+]);
 
 try {
   if (config.isProduction && config.adminPassword === 'ChangeMe123!') {
     throw new Error('ADMIN_PASSWORD must be changed before running production migrations.');
   }
+  if (!process.env.DATABASE_SCHEMA && config.databaseSchema === 'paytimepro') {
+    const legacySchema = await pool.query(
+      `SELECT COUNT(*)::integer AS table_count
+       FROM information_schema.tables
+       WHERE table_schema='public'
+         AND table_name=ANY($1::text[])`,
+      [['users', 'roles', 'modules', 'role_permissions', 'employee_profiles']]
+    );
+    if (Number(legacySchema.rows[0].table_count) === 5) {
+      throw new Error('Existing PayTimePro data was found in the public schema. Set DATABASE_SCHEMA=public to keep using it, or choose an explicit data-migration plan before initializing the paytimepro schema.');
+    }
+  }
+  await pool.query(`CREATE SCHEMA IF NOT EXISTS ${databaseSchemaIdentifier}`);
   const sql = await readFile(migrationPath, 'utf8');
   await pool.query(sql);
   await pool.query(`CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -21,6 +40,11 @@ try {
   for (const file of migrationFiles) {
     const alreadyApplied = await pool.query('SELECT 1 FROM schema_migrations WHERE version = $1', [file]);
     if (alreadyApplied.rowCount) continue;
+    if (demoDataMigrationFiles.has(file) && !config.seedDemoData) {
+      await pool.query('INSERT INTO schema_migrations (version) VALUES ($1)', [file]);
+      console.log(`Skipped demo data migration: ${file}`);
+      continue;
+    }
     const migrationSql = await readFile(new URL(`../../../database/migrations/${file}`, import.meta.url), 'utf8');
     const client = await pool.connect();
     try {
@@ -54,6 +78,7 @@ try {
        ('workforce', 'Employees', 'Employee profiles and workforce records.', 20),
        ('leave_management', 'Leave Management', 'Review and manage employee leave records.', 21),
        ('roles', 'Roles & Access', 'Roles and module operation permissions.', 40),
+       ('calendar', 'Calendar', 'Company holidays and events.', 45),
        ('time_tracking', 'Timetracking', 'Time entries, clock-ins, and timesheets.', 50),
        ('time_entries', 'Time Entries', 'View employee attendance entries and time records.', 51),
        ('exemption_report', 'Exemption Report', 'Monthly consolidated daily time-entry exemptions.', 52),
@@ -88,7 +113,7 @@ try {
   );
   await pool.query(
     `INSERT INTO role_permissions (role_id, module_id, can_view)
-     SELECT r.id, m.id, TRUE FROM roles r JOIN modules m ON m.module_key IN ('overview', 'setup', 'time_tracking', 'time_entries', 'shift_management', 'requests', 'leave_application', 'overtime_request', 'shift_change')
+     SELECT r.id, m.id, TRUE FROM roles r JOIN modules m ON m.module_key IN ('overview', 'setup', 'calendar', 'time_tracking', 'time_entries', 'shift_management', 'requests', 'leave_application', 'overtime_request', 'shift_change')
      WHERE r.name = 'Employee'
      ON CONFLICT (role_id, module_id) DO NOTHING`
   );
@@ -107,12 +132,21 @@ try {
      ON CONFLICT (role_id, module_id) DO UPDATE SET
        can_view = TRUE, can_update = TRUE, updated_at = NOW()`
   );
+  await pool.query(
+    `INSERT INTO role_permissions (role_id, module_id, can_create, can_view, can_update, can_delete)
+     SELECT role.id, module.id, TRUE, TRUE, TRUE, TRUE
+     FROM roles role CROSS JOIN modules module
+     WHERE LOWER(role.name) IN ('hr manager', 'hr') AND module.module_key = 'calendar'
+     ON CONFLICT (role_id, module_id) DO UPDATE SET
+       can_create = TRUE, can_view = TRUE, can_update = TRUE, can_delete = TRUE, updated_at = NOW()`
+  );
   const passwordHash = await bcrypt.hash(config.adminPassword, 12);
+  const existingAdminPasswordUpdate = config.resetAdminPassword ? 'password_hash = EXCLUDED.password_hash,' : '';
   await pool.query(
     `INSERT INTO users (email, password_hash, display_name, role, role_id, is_system)
      VALUES ($1, $2, $3, 'administrator', (SELECT id FROM roles WHERE name = 'Administrator'), TRUE)
      ON CONFLICT (email) DO UPDATE SET
-       password_hash = EXCLUDED.password_hash,
+       ${existingAdminPasswordUpdate}
        display_name = EXCLUDED.display_name,
        role = 'administrator',
        role_id = EXCLUDED.role_id,

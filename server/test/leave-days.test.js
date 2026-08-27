@@ -13,3 +13,12 @@ test('uses the employee assigned working days', () => {
 test('returns zero when a leave range contains only rest days', () => {
   assert.equal(countLeaveWorkDays('2026-08-22', '2026-08-23'), 0);
 });
+
+test('does not deduct leave credits for company holidays', () => {
+  assert.equal(countLeaveWorkDays(
+    '2026-08-17',
+    '2026-08-21',
+    ['monday','tuesday','wednesday','thursday','friday'],
+    ['2026-08-19']
+  ), 4);
+});

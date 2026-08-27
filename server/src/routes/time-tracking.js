@@ -3,6 +3,13 @@ import { pool } from '../db/pool.js';
 import { hasPermission, requireAuth, requirePermission } from '../auth/authorization.js';
 import { isIsoDate, isPositiveInteger } from '../validation.js';
 import { collapseNearbyTimeEntries } from '../time/filterEntries.js';
+import { holidayOccurrencesByDate } from '../calendar/service.js';
+import {
+  currentDepartmentSql,
+  currentJobTitleSql,
+  currentOrganizationJoin
+} from '../organization/current-organization-query.js';
+import { ensureOrganizationSchema } from './organization.js';
 
 export const timeTrackingRouter = Router();
 
@@ -46,7 +53,7 @@ timeTrackingRouter.get('/exemption-report', ...requirePermission('exemption_repo
     const today=`${todayParts.year}-${todayParts.month}-${todayParts.day}`;
     const reportEnd=endDate<today?endDate:today;
     if (reportEnd<startDate) return response.json({month,startDate,endDate,days:[],employees:[],summary:{employees:0,scheduledDays:0,total:0,absent:0,late:0,incomplete:0,undertime:0,break:0}});
-    const [employeesResult,entriesResult]=await Promise.all([
+    const [employeesResult,entriesResult,holidaysByDate]=await Promise.all([
       pool.query(`SELECT employee.id,employee.employee_number AS "employeeNumber",employee.first_name AS "firstName",employee.last_name AS "lastName",
         COALESCE(TO_CHAR(shift.start_time,'HH24:MI'),'08:00') AS "startTime",COALESCE(TO_CHAR(shift.end_time,'HH24:MI'),'17:00') AS "endTime",
         COALESCE(shift.work_days,ARRAY['monday','tuesday','wednesday','thursday','friday']::text[]) AS "workDays"
@@ -57,7 +64,8 @@ timeTrackingRouter.get('/exemption-report', ...requirePermission('exemption_repo
         TO_CHAR((attendance.entry->>'timestamp')::timestamptz AT TIME ZONE 'Asia/Manila','HH24:MI') AS "localTime"
         FROM scheduler_backups backup CROSS JOIN LATERAL jsonb_array_elements(backup.attendance) attendance(entry)
         WHERE ((attendance.entry->>'timestamp')::timestamptz AT TIME ZONE 'Asia/Manila')::date BETWEEN $1::date AND $2::date
-        ORDER BY timestamp`,[startDate,reportEnd])
+        ORDER BY timestamp`,[startDate,reportEnd]),
+      holidayOccurrencesByDate({ startDate, endDate:reportEnd })
     ]);
     const normalizeNumber=(value)=>/^\d+$/.test(String(value))?String(BigInt(value)):String(value);
     const entriesByEmployeeDate=new Map();
@@ -71,16 +79,19 @@ timeTrackingRouter.get('/exemption-report', ...requirePermission('exemption_repo
     const summary={employees:employeesResult.rowCount,scheduledDays:0,total:0,absent:0,late:0,incomplete:0,undertime:0,break:0};
     for (let cursor=new Date(`${startDate}T00:00:00Z`);cursor<=new Date(`${reportEnd}T00:00:00Z`);cursor.setUTCDate(cursor.getUTCDate()+1)) {
       const date=cursor.toISOString().slice(0,10),dayName=reportDayNames[cursor.getUTCDay()],records=[];
-      for (const employee of employeesResult.rows) {
-        if (!employee.workDays.includes(dayName)) continue;
-        summary.scheduledDays+=1;
-        const punches=entriesByEmployeeDate.get(`${normalizeNumber(employee.employeeNumber)}:${date}`)||[];
-        const exceptions=reportExceptions(punches,employee);
-        if (exceptions.length) records.push({employeeId:employee.id,employeeNumber:employee.employeeNumber,employeeName:`${employee.firstName} ${employee.lastName}`,exceptions});
+      const holiday=holidaysByDate.get(date)?.[0] || null;
+      if (!holiday) {
+        for (const employee of employeesResult.rows) {
+          if (!employee.workDays.includes(dayName)) continue;
+          summary.scheduledDays+=1;
+          const punches=entriesByEmployeeDate.get(`${normalizeNumber(employee.employeeNumber)}:${date}`)||[];
+          const exceptions=reportExceptions(punches,employee);
+          if (exceptions.length) records.push({employeeId:employee.id,employeeNumber:employee.employeeNumber,employeeName:`${employee.firstName} ${employee.lastName}`,exceptions});
+        }
       }
       const counts={total:records.reduce((sum,item)=>sum+item.exceptions.length,0),absent:records.filter(item=>item.exceptions.includes('Absent')).length,late:records.filter(item=>item.exceptions.some(value=>value.startsWith('Late'))).length,incomplete:records.filter(item=>item.exceptions.includes('Incomplete')).length,undertime:records.filter(item=>item.exceptions.includes('Undertime')).length,break:records.filter(item=>item.exceptions.some(value=>value.includes('Break')||value.includes('break'))).length};
       for (const key of ['total','absent','late','incomplete','undertime','break']) summary[key]+=counts[key];
-      days.push({date,weekday:cursor.toLocaleDateString('en-US',{timeZone:'UTC',weekday:'short'}),counts,records});
+      days.push({date,weekday:cursor.toLocaleDateString('en-US',{timeZone:'UTC',weekday:'short'}),holiday:holiday?{id:holiday.id,title:holiday.title,type:holiday.type}:null,counts,records});
     }
     return response.json({month,startDate,endDate,days,summary,employees:employeesResult.rows.map(employee=>({id:employee.id,employeeNumber:employee.employeeNumber,employeeName:`${employee.firstName} ${employee.lastName}`}))});
   } catch(error){return next(error);}
@@ -121,15 +132,18 @@ timeTrackingRouter.get('/my-shift-calendar/:moduleKey', requireAuth, async (requ
 
 timeTrackingRouter.get('/shifts', ...requirePermission('shift_management', 'view'), async (_request, response, next) => {
   try {
+    await ensureOrganizationSchema();
     const result = await pool.query(
       `SELECT employee.id, employee.employee_number AS "employeeNumber",
               employee.first_name AS "firstName", employee.last_name AS "lastName",
               employee.preferred_name AS "preferredName",
-              employee.job_title AS "jobTitle", assignment.shift_type AS "shiftType",
+              ${currentJobTitleSql} AS "jobTitle", ${currentDepartmentSql} AS department,
+              assignment.shift_type AS "shiftType",
               TO_CHAR(assignment.start_time, 'HH24:MI') AS "startTime",
               TO_CHAR(assignment.end_time, 'HH24:MI') AS "endTime",
               assignment.work_days AS "workDays"
        FROM employee_profiles employee
+       ${currentOrganizationJoin}
        LEFT JOIN employee_shift_assignments assignment ON assignment.employee_id = employee.id
        WHERE employee.employment_status = 'active'
        ORDER BY employee.last_name, employee.first_name`
@@ -212,11 +226,16 @@ timeTrackingRouter.get('/entries', ...requirePermission('time_entries', 'view'),
 
 timeTrackingRouter.get('/me', ...requirePermission('time_entries', 'view'), async (request, response, next) => {
   try {
+    await ensureOrganizationSchema();
     const result = await pool.query(
-      `SELECT id, employee_number AS "employeeNumber", first_name AS "firstName",
-              last_name AS "lastName", preferred_name AS "preferredName", email,
-              job_title AS "jobTitle", employment_status AS "employmentStatus"
-       FROM employee_profiles WHERE user_id = $1 LIMIT 1`,
+      `SELECT employee.id, employee.employee_number AS "employeeNumber",
+              employee.first_name AS "firstName", employee.last_name AS "lastName",
+              employee.preferred_name AS "preferredName", employee.email,
+              ${currentJobTitleSql} AS "jobTitle", ${currentDepartmentSql} AS department,
+              employee.employment_status AS "employmentStatus"
+       FROM employee_profiles employee
+       ${currentOrganizationJoin}
+       WHERE employee.user_id = $1 LIMIT 1`,
       [request.user.id]
     );
     if (!result.rowCount) return response.status(404).json({ error: 'Your employee profile is not linked to this account.' });
@@ -231,13 +250,17 @@ timeTrackingRouter.get('/employees', ...requirePermission('time_entries', 'view'
     const showAll = request.query.showAll === 'true';
     if (!search && !showAll) return response.json({ employees: [] });
     const pattern = `%${search}%`;
+    await ensureOrganizationSchema();
     const result = await pool.query(
       `SELECT employee.id, employee.employee_number AS "employeeNumber", employee.first_name AS "firstName",
               employee.last_name AS "lastName", employee.preferred_name AS "preferredName", employee.email,
-              employee.job_title AS "jobTitle", employee.employment_status AS "employmentStatus"
+              ${currentJobTitleSql} AS "jobTitle", ${currentDepartmentSql} AS department,
+              employee.employment_status AS "employmentStatus"
        FROM employee_profiles employee
+       ${currentOrganizationJoin}
        WHERE ($2::boolean = TRUE OR employee.employee_number ILIKE $1 OR employee.first_name ILIKE $1 OR employee.last_name ILIKE $1
-          OR employee.preferred_name ILIKE $1 OR employee.email ILIKE $1 OR employee.job_title ILIKE $1)
+          OR employee.preferred_name ILIKE $1 OR employee.email ILIKE $1
+          OR ${currentJobTitleSql} ILIKE $1 OR ${currentDepartmentSql} ILIKE $1)
        ORDER BY employee.employment_status = 'active' DESC, employee.last_name, employee.first_name
        LIMIT CASE WHEN $2::boolean THEN 200 ELSE 20 END`,
       [pattern, showAll]

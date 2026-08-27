@@ -16,8 +16,8 @@ export const parentModuleByChild = {
   shift_change: 'time_tracking',
   scheduler: 'utilities',
   device_users: 'utilities',
-  payroll_setup: 'payroll'
-  ,payout_view: 'payroll'
+  payroll_setup: 'payroll',
+  payout_view: 'payroll'
 };
 
 const permissionOperations = ['create', 'view', 'update', 'delete'];
@@ -43,6 +43,13 @@ export function hasPermission(user, moduleKey, operation) {
   if (!parentKey) return true;
   const parentPermission = user.permissions.find((item) => item.moduleKey === parentKey);
   return Boolean(parentPermission?.[operation]);
+}
+
+export function canAssignWorkforceRole(user, selectedRole, currentRoleId = null) {
+  if (!selectedRole || selectedRole.name === 'Administrator') return false;
+  if (selectedRole.name === 'Employee') return true;
+  if (currentRoleId && String(currentRoleId) === String(selectedRole.id)) return true;
+  return hasPermission(user, 'roles', 'update');
 }
 
 export async function getSessionUser(userId) {
@@ -112,6 +119,16 @@ export function requireAnyPermission(moduleKey, operations) {
   return [requireAuth, (request, response, next) => {
     if (!operations.some((operation) => hasPermission(request.user, moduleKey, operation))) {
       return response.status(403).json({ error: `You do not have permission to modify ${moduleKey}.` });
+    }
+    return next();
+  }];
+}
+
+export function requireOneOfPermissions(permissions) {
+  return [requireAuth, (request, response, next) => {
+    const allowed = permissions.some(([moduleKey, operation]) => hasPermission(request.user, moduleKey, operation));
+    if (!allowed) {
+      return response.status(403).json({ error:'You do not have permission to access this resource.' });
     }
     return next();
   }];

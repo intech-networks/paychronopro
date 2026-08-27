@@ -40,11 +40,16 @@ Open http://localhost:5173. The API runs at http://localhost:5000 and the health
 - `npm run dev` starts the API and React dev servers.
 - `npm run build` creates the production client build.
 - `npm start` starts the API only.
-- `npm run db:migrate` applies `database/init.sql`.
+- `npm run db:migrate` applies the base schema and pending incremental migrations.
+- `npm run db:audit` runs read-only relationship, constraint, payroll, and tax integrity checks.
+- `npm run smoke:payroll` exercises the local running API with temporary payroll data and cleans it up afterward; it is disabled in production.
 - `npm test` runs the server unit tests.
 - `npm run check` validates server syntax, runs tests, and builds the client.
 
 Environment values are loaded from the repository-root `.env` when commands run from the root directory.
+By default, PayTimePro uses its own `paytimepro` database schema. This lets it share a PostgreSQL database with unrelated applications without reusing their tables. Set `DATABASE_SCHEMA` only when you need a different lowercase schema name.
+
+If an existing PayTimePro installation still uses PostgreSQL's `public` schema, set `DATABASE_SCHEMA=public` before migrating or starting the API. The migration command stops rather than silently creating a separate empty application schema when it detects the current PayTimePro table set in `public`.
 
 Incremental SQL migrations live in `database/migrations` and are recorded in the
 `schema_migrations` table. Migration files are applied once in filename order.
@@ -56,16 +61,22 @@ long random `SESSION_SECRET`. Enable `DATABASE_SSL=true` only when the database
 server presents a certificate trusted by Node.js. Set `TRUST_PROXY=true` when the
 API runs behind a trusted reverse proxy that terminates HTTPS.
 
+For local API diagnosis, set `DEBUG_API_ERRORS=true`. Unexpected API failures
+remain safe for users but include a request reference; the server log records the
+matching full error. Detailed messages are never returned when `NODE_ENV=production`.
+
 ## Administrator login
 
-Running `npm run db:migrate` creates or updates the development Administrator account using `ADMIN_EMAIL`, `ADMIN_PASSWORD`, and `ADMIN_NAME` from `.env`.
+Running `npm run db:migrate` creates or maintains the development Administrator account using `ADMIN_EMAIL`, `ADMIN_PASSWORD`, and `ADMIN_NAME` from `.env`.
 
 The default local credentials are:
 
 - Email: `admin@paytimepro.local`
 - Password: `ChangeMe123!`
 
-Change the password and `SESSION_SECRET` in `.env` before using the application outside local development, then rerun `npm run db:migrate` to update the seeded Administrator password.
+Change the password and `SESSION_SECRET` in `.env` before using the application outside local development. Existing Administrator passwords are preserved during routine migrations; set `RESET_ADMIN_PASSWORD=true` only for the migration run where you intentionally want to reset the seeded Administrator password.
+
+Database migrations do not insert sample attendance or default employee shifts. For a disposable local demo database only, set `SEED_DEMO_DATA=true` before its first migration run. Never enable it for live company data.
 
 ## Role-based access control
 

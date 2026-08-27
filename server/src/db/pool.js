@@ -1,12 +1,12 @@
 import pg from 'pg';
-import { config } from '../config.js';
+import { config, databaseSchemaIdentifier } from '../config.js';
 
-class PublicSchemaPool extends pg.Pool {
+class ApplicationSchemaPool extends pg.Pool {
   connect(callback) {
     if (callback) {
       return super.connect((error, client, release) => {
         if (error) return callback(error);
-        return client.query('SET search_path TO public', (initializationError) => {
+        return client.query(`SET search_path TO ${databaseSchemaIdentifier}`, (initializationError) => {
           if (initializationError) {
             release(initializationError);
             return callback(initializationError);
@@ -17,7 +17,7 @@ class PublicSchemaPool extends pg.Pool {
     }
     return super.connect().then(async (client) => {
       try {
-        await client.query('SET search_path TO public');
+        await client.query(`SET search_path TO ${databaseSchemaIdentifier}`);
         return client;
       } catch (error) {
         client.release(error);
@@ -27,7 +27,7 @@ class PublicSchemaPool extends pg.Pool {
   }
 }
 
-export const pool = new PublicSchemaPool({
+export const pool = new ApplicationSchemaPool({
   connectionString: config.databaseUrl,
   ssl: config.databaseSsl ? { rejectUnauthorized: true } : false
 });
