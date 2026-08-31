@@ -29,10 +29,10 @@ try {
         AS inactive_employees_with_active_login,
       (SELECT COUNT(*)::integer
        FROM (
-         SELECT employee_id
+         SELECT employee_id, unit_id
          FROM organization_assignments
          WHERE effective_to IS NULL
-         GROUP BY employee_id
+         GROUP BY employee_id, unit_id
          HAVING COUNT(*)>1
        ) duplicate) AS duplicate_current_assignments,
       (SELECT COUNT(*)::integer
