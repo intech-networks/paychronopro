@@ -1,0 +1,250 @@
+/*
+ * Application-wide typography floor.
+ *
+ * This file is intentionally loaded last. It improves the smallest legacy
+ * labels without changing card, grid, or navigation geometry.
+ */
+:root {
+  --readable-text: .875rem;       /* 14px */
+  --readable-control: .8125rem;   /* 13px */
+  --readable-caption: .75rem;     /* 12px */
+  --readable-compact: .6875rem;   /* 11px */
+}
+
+html {
+  font-size: 16px;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  font-size: var(--readable-text);
+  line-height: 1.5;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+p,
+li,
+dt,
+dd {
+  line-height: 1.5;
+}
+
+button,
+input,
+select,
+textarea {
+  font-size: var(--readable-control) !important;
+  line-height: 1.35;
+}
+
+textarea {
+  line-height: 1.5;
+}
+
+small {
+  font-size: var(--readable-caption) !important;
+  line-height: 1.4;
+}
+
+label,
+legend,
+label > span {
+  font-size: var(--readable-caption) !important;
+  line-height: 1.4;
+}
+
+/* Navigation and shared page headings. */
+.sidebar nav a,
+.sidebar nav button,
+.sidebar-bottom > a,
+.logout-button {
+  font-size: var(--readable-control) !important;
+}
+
+.sidebar .sidebar-subnav button,
+.user-chip strong,
+.header-user strong,
+.breadcrumb,
+.dashboard-header > div:first-of-type > span {
+  font-size: var(--readable-caption) !important;
+}
+
+.protected-badge,
+.sidebar-nav-group > button b {
+  font-size: var(--readable-compact) !important;
+  line-height: 1.3;
+}
+
+.module-title > div > span,
+.dashboard-page-header > div > span,
+.card-heading > div > span,
+.section-heading > div > span,
+.metric-card > span,
+.friendly-table-heading span,
+.organization-section-heading span {
+  font-size: var(--readable-caption) !important;
+  line-height: 1.35;
+}
+
+.module-title p,
+.dashboard-page-header p,
+.permission-heading p,
+.organization-section-heading p,
+.friendly-table-heading > small,
+.time-employee-selector-header p {
+  font-size: var(--readable-control) !important;
+}
+
+/* Dashboard cards and data summaries. */
+.clock-line,
+.presence,
+.metric-card > small,
+.section-heading button,
+.section-heading a,
+.summary-card dt,
+.summary-card dd,
+.status,
+.time-value {
+  font-size: var(--readable-caption) !important;
+  line-height: 1.4;
+}
+
+.table-head,
+.permission-head,
+.user-role-head,
+.employee-head,
+.department-head,
+.position-head,
+.tax-bracket-head,
+.disbursement-row.head {
+  font-size: var(--readable-caption) !important;
+  line-height: 1.35;
+}
+
+.person strong,
+.role-list strong,
+.permission-row strong,
+.user-role-row strong,
+.employee-row strong,
+.department-row strong,
+.position-row strong,
+.time-entry-row strong,
+.request-row strong,
+.payroll-employee-list strong,
+.tax-config-layout > aside strong,
+.disbursement-run-list strong,
+.disbursement-row strong,
+.time-entry-step strong,
+.time-entry-person strong,
+.payroll-flow strong {
+  font-size: var(--readable-control) !important;
+  line-height: 1.4;
+}
+
+.user-role-row > span,
+.employee-row > span,
+.department-row > span,
+.position-row > span,
+.time-entry-row > span,
+.request-row > span,
+.disbursement-row > span,
+.tax-active,
+.payroll-check,
+.rbac-message {
+  font-size: var(--readable-caption) !important;
+  line-height: 1.4;
+}
+
+/* Form section labels and supporting actions. */
+.role-list > span,
+.payroll-employee-list > label span,
+.payroll-notes > span,
+.payroll-editor-heading span,
+.payroll-field-grid label > span,
+.tax-general label > span,
+.tax-preview label > span,
+.time-entry-overview article > span {
+  font-size: var(--readable-caption) !important;
+  line-height: 1.4;
+}
+
+.role-list i,
+.tax-config-layout > aside b,
+.time-entry-step > b,
+.payroll-flow > button > b,
+.time-entry-overview article > small {
+  font-size: var(--readable-compact) !important;
+  line-height: 1.3;
+}
+
+/* Native table modules use conventional, comfortably readable sizes. */
+.dashboard-main table th {
+  font-size: var(--readable-caption) !important;
+  line-height: 1.35;
+}
+
+.dashboard-main table td {
+  font-size: var(--readable-control) !important;
+  line-height: 1.45;
+}
+
+/*
+ * Calendar labels must remain compact enough to fit narrow day cells. They
+ * still receive a 10px floor, replacing legacy values as small as 6.7px.
+ */
+.calendar-grid .calendar-item,
+.calendar-grid .calendar-item i,
+.calendar-grid .calendar-item small,
+.calendar-grid .calendar-more,
+.request-calendar-grid .calendar-item,
+.request-calendar-grid .calendar-item i,
+.request-calendar-grid .calendar-item small,
+.request-calendar-grid .calendar-more {
+  font-size: .625rem !important;
+  line-height: 1.25;
+}
+
+.calendar-weekday {
+  font-size: var(--readable-compact) !important;
+}
+
+.calendar-day-number {
+  font-size: var(--readable-caption) !important;
+}
+
+.calendar-day-top > span {
+  font-size: .625rem !important;
+}
+
+@media (max-width: 720px) {
+  .module-title p,
+  .dashboard-page-header p {
+    max-width: 36rem;
+  }
+
+  .dashboard-main table {
+    font-size: var(--readable-control);
+  }
+}
+
+@media (max-width: 460px) {
+  .calendar-weekday {
+    font-size: .5625rem !important;
+  }
+
+  .calendar-day-number {
+    font-size: var(--readable-compact) !important;
+  }
+
+  /* Keep the established dot-only event treatment on very narrow screens. */
+  .calendar-grid .calendar-item,
+  .request-calendar-grid .calendar-item {
+    font-size: 0 !important;
+  }
+
+  .calendar-grid .calendar-more,
+  .request-calendar-grid .calendar-more {
+    font-size: .5625rem !important;
+  }
+}

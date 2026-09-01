@@ -56,6 +56,14 @@ try {
            AND daterange(earlier.period_start, earlier.period_end, '[]')
              && daterange(later.period_start, later.period_end, '[]')
        ) conflict) AS overlapping_finalized_payroll_items,
+       (SELECT COUNT(*)::integer
+        FROM payroll_run_items
+        WHERE (disbursement_status='paid' AND (
+          disbursement_method IS NULL OR disbursement_reference IS NULL
+          OR disbursed_at IS NULL OR disbursed_by IS NULL
+        )) OR (disbursement_status<>'paid' AND (
+          disbursed_at IS NOT NULL OR disbursed_by IS NOT NULL
+        ))) AS invalid_disbursements,
       (SELECT COUNT(*)::integer
        FROM tax_configurations earlier
        JOIN tax_configurations later ON later.id>earlier.id
@@ -103,6 +111,7 @@ try {
     'orphan_payroll_items',
     'invalid_payroll_items',
     'overlapping_finalized_payroll_items',
+    'invalid_disbursements',
     'overlapping_active_tax_configurations'
   ];
   const failedChecks = errorKeys.filter((key) => Number(integrity[key]) !== 0);

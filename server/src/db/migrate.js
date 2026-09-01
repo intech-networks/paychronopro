@@ -93,6 +93,7 @@ try {
        ('payroll', 'Payroll', 'Payroll periods, calculations, and exports.', 70),
        ('payroll_setup', 'Salary Setup', 'Configure employee compensation, earnings, and deductions.', 71),
        ('payout_view', 'Payout View', 'Preview actual employee payout calculations by pay period.', 73),
+       ('disbursement', 'Disbursement', 'Track employee payroll payment processing and release.', 74),
        ('reports', 'Reports', 'Workforce and payroll reporting.', 80)
      ON CONFLICT (module_key) DO UPDATE SET
        name = EXCLUDED.name, description = EXCLUDED.description,

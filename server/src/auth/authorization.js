@@ -17,7 +17,8 @@ export const parentModuleByChild = {
   scheduler: 'utilities',
   device_users: 'utilities',
   payroll_setup: 'payroll',
-  payout_view: 'payroll'
+  payout_view: 'payroll',
+  disbursement: 'payroll'
 };
 
 const permissionOperations = ['create', 'view', 'update', 'delete'];

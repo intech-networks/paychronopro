@@ -1,4 +1,4 @@
-import test from 'node:test';import assert from 'node:assert/strict';import{calculateAnnualizedTax,calculatePhilippineWithholding,calculateProgressiveTax}from'../src/payroll/tax.js';
+import test from 'node:test';import assert from 'node:assert/strict';import{calculateAnnualizedTax,calculatePhilippineWithholding,calculateProgressiveTax,calculateYearEndAdjustment}from'../src/payroll/tax.js';
 test('calculates tax from matching bracket',()=>assert.equal(calculateProgressiveTax(50000,0,[{lowerBound:0,upperBound:25000,baseTax:0,ratePercent:0},{lowerBound:25000,upperBound:null,baseTax:0,ratePercent:20}]).tax,5000));
 test('deducts mandatory contributions before withholding',()=>{const result=calculatePhilippineWithholding({regularCompensation:50000,mandatoryContributions:2500,brackets:[{lowerBound:0,upperBound:20833,baseTax:0,ratePercent:0},{lowerBound:20833,upperBound:33333,baseTax:0,ratePercent:15},{lowerBound:33333,upperBound:66667,baseTax:1875,ratePercent:20}]});assert.equal(result.taxableIncome,47500);assert.equal(result.tax,4708.4);});
 test('uses biweekly weekly-table conversion',()=>assert.equal(calculatePhilippineWithholding({regularCompensation:20000,frequency:'biweekly',brackets:[{lowerBound:0,upperBound:4808,baseTax:0,ratePercent:0},{lowerBound:4808,upperBound:7692,baseTax:0,ratePercent:15},{lowerBound:7692,upperBound:15385,baseTax:432.6,ratePercent:20}]}).tax,1788.4));
@@ -14,3 +14,4 @@ test('keeps non-taxable earnings in gross compensation without taxing them',()=>
   assert.equal(result.tax,1200);
 });
 test('uses the 2023 onwards annual table',()=>assert.equal(calculateAnnualizedTax(500000),42500));
+test('computes year-end withholding due and employee refunds',()=>{assert.deepEqual(calculateYearEndAdjustment({yearToDateTaxableCompensation:450000,currentTaxableCompensation:50000,yearToDateTaxWithheld:40000}),{annualizedTax:42500,priorNetWithholding:40000,balance:2500,taxWithheld:2500,taxRefund:0});assert.deepEqual(calculateYearEndAdjustment({yearToDateTaxableCompensation:450000,currentTaxableCompensation:50000,yearToDateTaxWithheld:45000}),{annualizedTax:42500,priorNetWithholding:45000,balance:-2500,taxWithheld:0,taxRefund:2500});});

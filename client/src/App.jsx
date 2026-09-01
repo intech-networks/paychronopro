@@ -2,6 +2,8 @@ import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import './tax.css';
 import './payroll-tax.css';
 import './payroll-workspace.css';
+import './payroll-runs.css';
+import './disbursement.css';
 import './exemption-report.css';
 import './payout.css';
 import './calendar.css';
@@ -23,7 +25,7 @@ const parentModuleByChild = {
   company:'setup', organization:'setup', tax_configuration:'payroll',
   workforce:'workforce_module', leave_management:'setup', roles:'setup',
   shift_management:'setup', time_entries:'time_tracking', exemption_report:'time_tracking', requests:'time_tracking', leave_application:'time_tracking', overtime_request:'time_tracking', shift_change:'time_tracking',
-  scheduler:'utilities', device_users:'utilities', payroll_setup:'payroll', payroll_tax:'payroll', payout_view:'payroll'
+  scheduler:'utilities', device_users:'utilities', payroll_setup:'payroll', payroll_tax:'payroll', payroll_runs:'payroll', payout_view:'payroll', disbursement:'payroll'
 };
 
 function effectiveModulePermission(user, moduleKey) {
@@ -148,6 +150,9 @@ function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [activeModule, setActiveModule] = useState('overview');
   const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
+  const [desktopSidebarCollapsed, setDesktopSidebarCollapsed] = useState(() => {
+    try { return window.localStorage.getItem('paytimepro.sidebarCollapsed') === 'true'; } catch { return false; }
+  });
   const [setupOpen, setSetupOpen] = useState(true);
   const [workforceOpen, setWorkforceOpen] = useState(true);
   const [maintenanceOpen, setMaintenanceOpen] = useState(true);
@@ -187,8 +192,9 @@ function Dashboard() {
         setUser(data.user);
         const visibleModules = data.user.permissions.filter((permission) => permission.view && !(data.user.role === 'Administrator' && administratorHiddenModuleKeys.has(permission.moduleKey))).map((permission) => permission.moduleKey);
         if (visibleModules.includes('payroll_setup')) visibleModules.push('payroll_tax');
+        if (visibleModules.includes('payroll_setup') && visibleModules.includes('payout_view')) visibleModules.push('payroll_runs');
         if (data.user.role === 'Administrator') visibleModules.push('setup', 'company', 'organization');
-        const parentByChild = { company:'setup', organization:'setup', shift_management:'setup', leave_management:'setup', roles:'setup', tax_configuration:'payroll', workforce:'workforce_module', time_entries:'time_tracking', exemption_report:'time_tracking', requests:'time_tracking', leave_application:'time_tracking', overtime_request:'time_tracking', shift_change:'time_tracking', scheduler:'utilities', device_users:'utilities', payroll_setup:'payroll', payroll_tax:'payroll', payout_view:'payroll' };
+        const parentByChild = { company:'setup', organization:'setup', shift_management:'setup', leave_management:'setup', roles:'setup', tax_configuration:'payroll', workforce:'workforce_module', time_entries:'time_tracking', exemption_report:'time_tracking', requests:'time_tracking', leave_application:'time_tracking', overtime_request:'time_tracking', shift_change:'time_tracking', scheduler:'utilities', device_users:'utilities', payroll_setup:'payroll', payroll_tax:'payroll', payroll_runs:'payroll', payout_view:'payroll', disbursement:'payroll' };
         const setupVisible = visibleModules.includes('setup') && ['company', 'organization', 'shift_management', 'leave_management', 'roles'].some((moduleKey) => visibleModules.includes(moduleKey));
         const workforceVisible = visibleModules.includes('workforce_module') && visibleModules.includes('workforce');
         const maintenanceVisible = visibleModules.includes('maintenance') && ['leave_management', 'roles'].some((moduleKey) => visibleModules.includes(moduleKey));
@@ -212,6 +218,10 @@ function Dashboard() {
     if (!user) return;
     try { window.localStorage.setItem('paytimepro.activeModule', activeModule); } catch {}
   }, [activeModule, user]);
+
+  useEffect(() => {
+    try { window.localStorage.setItem('paytimepro.sidebarCollapsed', String(desktopSidebarCollapsed)); } catch {}
+  }, [desktopSidebarCollapsed]);
 
   useEffect(() => {
     if (!mobileNavigationOpen) return undefined;
@@ -257,10 +267,13 @@ function Dashboard() {
   ].filter(([moduleKey]) => canView(moduleKey));
 
   return (
-    <div className="dashboard-shell">
+    <div className={`dashboard-shell${desktopSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
       <aside className={`sidebar${mobileNavigationOpen ? ' sidebar-open' : ''}`} id="dashboard-sidebar">
         <button className="mobile-sidebar-close" type="button" ref={mobileNavigationCloseRef} onClick={() => closeMobileNavigation({ restoreToggleFocus: true })} aria-label="Close navigation"><span aria-hidden="true">×</span></button>
-        <Logo />
+        <div className="sidebar-brand">
+          <Logo />
+          <button className="desktop-sidebar-toggle" type="button" onClick={() => setDesktopSidebarCollapsed((current) => !current)} aria-expanded={!desktopSidebarCollapsed} aria-controls="dashboard-sidebar" aria-label={desktopSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} title={desktopSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}><span aria-hidden="true">{desktopSidebarCollapsed ? '›' : '‹'}</span></button>
+        </div>
         <nav aria-label="Dashboard navigation" onClick={(event) => {
           if (event.target.closest('button')) closeMobileNavigation({ focusMain: true });
         }}>
@@ -277,9 +290,9 @@ function Dashboard() {
             <button className={['time_tracking', 'time_entries', 'exemption_report', 'requests', 'leave_application', 'overtime_request', 'shift_change'].includes(activeModule) ? 'active group-active' : ''} type="button" onClick={() => { setTimeTrackingOpen((current) => !current); setActiveModule('time_tracking'); }} aria-expanded={timeTrackingOpen}><span>◷</span>Timetracking<b>{timeTrackingOpen ? '⌃' : '⌄'}</b></button>
             {timeTrackingOpen && <div className="sidebar-subnav">{canView('time_entries')&&<button className={activeModule === 'time_entries' ? 'active' : ''} type="button" onClick={() => setActiveModule('time_entries')}><span>•</span>Time Entries</button>}{canView('exemption_report')&&<button className={activeModule === 'exemption_report' ? 'active' : ''} type="button" onClick={() => setActiveModule('exemption_report')}><span>•</span>Exemption Report</button>}{canView('requests')&&<button className={activeModule === 'requests' ? 'active' : ''} type="button" onClick={() => setActiveModule('requests')}><span>•</span>Requests</button>}{canView('leave_application')&&<button className={activeModule === 'leave_application' ? 'active' : ''} type="button" onClick={() => setActiveModule('leave_application')}><span>•</span>Leave Application</button>}{canView('overtime_request')&&<button className={activeModule === 'overtime_request' ? 'active' : ''} type="button" onClick={() => setActiveModule('overtime_request')}><span>•</span>Overtime Request</button>}{canView('shift_change')&&<button className={activeModule === 'shift_change' ? 'active' : ''} type="button" onClick={() => setActiveModule('shift_change')}><span>•</span>Shift Change</button>}</div>}
           </div>}
-          {canView('payroll') && (canView('payroll_setup')||canView('tax_configuration')||canView('payout_view')) && <div className="sidebar-nav-group">
-            <button className={['payroll','payroll_setup','payroll_tax','tax_configuration','payout_view'].includes(activeModule) ? 'active group-active' : ''} type="button" onClick={() => { setPayrollOpen((current) => !current); setActiveModule('payroll'); }} aria-expanded={payrollOpen}><span>$</span>Payroll<b>{payrollOpen ? '⌃' : '⌄'}</b></button>
-            {payrollOpen&&<div className="sidebar-subnav">{canView('payroll_setup')&&<button className={activeModule==='payroll_setup'?'active':''} type="button" onClick={()=>setActiveModule('payroll_setup')}><span>•</span>Salary Setup</button>}{canView('tax_configuration')&&<button className={activeModule==='tax_configuration'?'active':''} type="button" onClick={()=>setActiveModule('tax_configuration')}><span>•</span>Tax Configuration</button>}{canView('payroll_setup')&&<button className={activeModule==='payroll_tax'?'active':''} type="button" onClick={()=>setActiveModule('payroll_tax')}><span>•</span>Tax Calculator</button>}{canView('payout_view')&&<button className={activeModule==='payout_view'?'active':''} type="button" onClick={()=>setActiveModule('payout_view')}><span>•</span>Payout View</button>}</div>}
+          {canView('payroll') && (canView('payroll_setup')||canView('tax_configuration')||canView('payout_view')||canView('disbursement')) && <div className="sidebar-nav-group">
+            <button className={['payroll','payroll_setup','payroll_tax','payroll_runs','tax_configuration','payout_view','disbursement'].includes(activeModule) ? 'active group-active' : ''} type="button" onClick={() => { setPayrollOpen((current) => !current); setActiveModule('payroll'); }} aria-expanded={payrollOpen}><span>$</span>Payroll<b>{payrollOpen ? '⌃' : '⌄'}</b></button>
+            {payrollOpen&&<div className="sidebar-subnav">{canView('payroll_setup')&&<button className={activeModule==='payroll_setup'?'active':''} type="button" onClick={()=>setActiveModule('payroll_setup')}><span>•</span>Salary Setup</button>}{canView('tax_configuration')&&<button className={activeModule==='tax_configuration'?'active':''} type="button" onClick={()=>setActiveModule('tax_configuration')}><span>•</span>Tax Configuration</button>}{canView('payroll_setup')&&<button className={activeModule==='payroll_tax'?'active':''} type="button" onClick={()=>setActiveModule('payroll_tax')}><span>•</span>Tax Calculator</button>}{canView('payroll_setup')&&canView('payout_view')&&<button className={activeModule==='payroll_runs'?'active':''} type="button" onClick={()=>setActiveModule('payroll_runs')}><span>•</span>Payroll Runs</button>}{canView('payout_view')&&<button className={activeModule==='payout_view'?'active':''} type="button" onClick={()=>setActiveModule('payout_view')}><span>•</span>Payout View</button>}{canView('disbursement')&&<button className={activeModule==='disbursement'?'active':''} type="button" onClick={()=>setActiveModule('disbursement')}><span>•</span>Disbursement</button>}</div>}
           </div>}
           {navItems.slice(1).map(([moduleKey, icon, label]) => <button className={activeModule === moduleKey ? 'active' : ''} type="button" key={moduleKey} onClick={() => setActiveModule(moduleKey)}><span>{icon}</span>{label}</button>)}
           {canView('setup') && setupItems.length > 0 && <div className="sidebar-nav-group">
@@ -323,7 +336,9 @@ function Dashboard() {
           {activeModule === 'payroll_setup' && <PayrollSetup user={user} />}
           {activeModule === 'tax_configuration' && <TaxConfiguration user={user} />}
           {activeModule === 'payroll_tax' && <PayrollTaxCalculator user={user} />}
+          {activeModule === 'payroll_runs' && <PayrollRuns user={user} onNavigate={setActiveModule} />}
           {activeModule === 'payout_view' && <PayoutView />}
+          {activeModule === 'disbursement' && <Disbursement user={user} />}
           {activeModule === 'reports' && <ModulePlaceholder moduleKey={activeModule} />}
         </main>
       </div>
@@ -332,7 +347,7 @@ function Dashboard() {
 }
 
 function Overview({ user, onNavigate }) {
-  const childModuleKeys = ['maintenance','company','organization','tax_configuration','workforce','leave_management','roles','time_entries','exemption_report','shift_management','requests','leave_application','overtime_request','shift_change','scheduler','device_users','payroll_setup','payroll_tax','payout_view','calendar'];
+  const childModuleKeys = ['maintenance','company','organization','tax_configuration','workforce','leave_management','roles','time_entries','exemption_report','shift_management','requests','leave_application','overtime_request','shift_change','scheduler','device_users','payroll_setup','payroll_tax','payroll_runs','payout_view','disbursement','calendar'];
   const visibleModules = user.permissions.filter((permission) => permission.view && permission.moduleKey !== 'overview' && !childModuleKeys.includes(permission.moduleKey));
   const calendarVisible = Boolean(effectiveModulePermission(user,'calendar')?.view);
   return <section className="overview-view"><div className="module-title"><div><span>Workspace</span><h1>Welcome, {user.displayName.split(' ')[0]}</h1><p>Choose a module to continue.</p></div></div>{calendarVisible&&<UpcomingCalendarCard onNavigate={onNavigate}/>}<div className="module-grid">{visibleModules.map((permission) => <button type="button" key={permission.moduleKey} onClick={() => onNavigate(permission.moduleKey)}><strong>{permission.moduleName}</strong><span>Open module →</span></button>)}</div></section>;
@@ -709,10 +724,11 @@ function Payroll({ user, onNavigate }) {
   const setup=effectiveModulePermission(user,'payroll_setup');
   const tax=effectiveModulePermission(user,'tax_configuration');
   const payout=effectiveModulePermission(user,'payout_view');
-  return <section className="overview-view payroll-workspace"><div className="module-title"><div><span>Compensation</span><h1>Payroll</h1><p>Choose a payroll module to configure compensation or calculate withholding.</p></div></div><div className="module-grid">{setup?.view&&<button type="button" onClick={()=>onNavigate('payroll_setup')}><strong>Salary Setup</strong><span>Salary, earnings and deductions →</span></button>}{tax?.view&&<button type="button" onClick={()=>onNavigate('tax_configuration')}><strong>Tax Configuration</strong><span>BIR tables and effective dates →</span></button>}{setup?.view&&<button type="button" onClick={()=>onNavigate('payroll_tax')}><strong>Tax Calculator</strong><span>Calculate and review withholding →</span></button>}{payout?.view&&<button type="button" onClick={()=>onNavigate('payout_view')}><strong>Payout View</strong><span>Actual pay based on setup and attendance →</span></button>}</div></section>;
+  const disbursement=effectiveModulePermission(user,'disbursement');
+  return <section className="overview-view payroll-workspace"><div className="module-title"><div><span>Compensation</span><h1>Payroll</h1><p>Choose a payroll module to configure compensation, calculate pay, or release finalized payroll.</p></div></div><div className="module-grid">{setup?.view&&<button type="button" onClick={()=>onNavigate('payroll_setup')}><strong>Salary Setup</strong><span>Salary, earnings and deductions →</span></button>}{tax?.view&&<button type="button" onClick={()=>onNavigate('tax_configuration')}><strong>Tax Configuration</strong><span>BIR tables and effective dates →</span></button>}{setup?.view&&<button type="button" onClick={()=>onNavigate('payroll_tax')}><strong>Tax Calculator</strong><span>Calculate and review withholding →</span></button>}{setup?.view&&payout?.view&&<button type="button" onClick={()=>onNavigate('payroll_runs')}><strong>Payroll Runs</strong><span>Calculate, create, and finalize payroll →</span></button>}{payout?.view&&<button type="button" onClick={()=>onNavigate('payout_view')}><strong>Payout View</strong><span>Actual pay based on setup and attendance →</span></button>}{disbursement?.view&&<button type="button" onClick={()=>onNavigate('disbursement')}><strong>Disbursement</strong><span>Track payroll payment release →</span></button>}</div></section>;
 }
 
-const emptyPayrollProfile={payBasis:'monthly',payFrequency:'semi_monthly',baseRate:'',standardHoursPerDay:'8',taxStatus:'taxable',effectiveDate:'',isMinimumWageEarner:false,autoCalculateContributions:true,contributionDeductionSchedule:'split_evenly',sssEmployeeShare:'0',philhealthEmployeeShare:'0',pagibigEmployeeShare:'0',unionDues:'0',notes:'',components:[]};
+const emptyPayrollProfile={payBasis:'monthly',payFrequency:'semi_monthly',baseRate:'',monthlyContributionBase:'',standardHoursPerDay:'8',taxStatus:'taxable',effectiveDate:'',isMinimumWageEarner:false,minimumWageRegion:'',minimumDailyWage:'',autoCalculateContributions:true,contributionDeductionSchedule:'split_evenly',sssEmployeeShare:'0',philhealthEmployeeShare:'0',pagibigEmployeeShare:'0',unionDues:'0',notes:'',components:[]};
 
 function PayrollSetup({ user }) {
   const permission=effectiveModulePermission(user,'payroll_setup');
@@ -736,6 +752,8 @@ function PayrollSetup({ user }) {
         ...emptyPayrollProfile,
         ...data.profile,
         baseRate:data.profile?.baseRate ?? '',
+        monthlyContributionBase:data.profile?.monthlyContributionBase ?? data.profile?.baseRate ?? '',
+        minimumDailyWage:data.profile?.minimumDailyWage ?? '',
         standardHoursPerDay:data.profile?.standardHoursPerDay ?? '8',
         effectiveDate:data.profile?.effectiveDate?.slice(0,10) || '',
         components:data.components || []
@@ -748,7 +766,7 @@ function PayrollSetup({ user }) {
   }
   useEffect(() => () => selectionRequestRef.current?.abort(), []);
   function updateItem(index,field,value){setForm(current=>({...current,components:current.components.map((item,i)=>i===index?{...item,[field]:value}:item)}));}
-  function addItem(type){setForm(current=>({...current,components:[...current.components,{type,name:'',amount:'',calculation:'fixed',isTaxable:type==='earning',isActive:true}]}));}
+  function addItem(type){setForm(current=>({...current,components:[...current.components,{type,name:'',amount:'',calculation:'fixed',isTaxable:type==='earning',benefitCategory:'',isActive:true}]}));}
   async function save(event) {
     event.preventDefault();
     if (!selected || saving) return;
@@ -773,7 +791,7 @@ function PayrollSetup({ user }) {
       setSaving(false);
     }
   }
-  return <section className="payroll-setup-view"><div className="module-title"><div><span>Payroll</span><h1>Salary Setup</h1><p>Set each employee's compensation and recurring payroll items.</p></div></div>{message&&<p className="rbac-message" role="status">{message}</p>}<div className="payroll-setup-layout"><aside className="payroll-employee-list"><label><span>Find employee</span><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Name or employee number"/></label><div>{employees.map(employee=><button type="button" className={selected?.id===employee.id?'selected':''} key={employee.id} onClick={()=>choose(employee)}><span><strong>{employee.firstName} {employee.lastName}</strong><small>{employee.employeeNumber} · {employee.jobTitle||'No position'}</small></span><b>{employee.baseRate!=null?`₱${Number(employee.baseRate).toLocaleString()}`:'Not set'}</b></button>)}</div></aside><main className="payroll-editor">{!selected?<div className="time-entry-empty-state"><strong>Choose an employee</strong><p>Select someone from the list to configure their payroll details.</p></div>:<form onSubmit={save}><div className="payroll-editor-heading"><div><span>Payroll profile</span><h2>{selected.firstName} {selected.lastName}</h2></div><button disabled={!permission?.update||saving}>{saving?'Saving…':'Save setup'}</button></div><fieldset><legend>Compensation</legend><div className="payroll-field-grid"><label><span>Pay basis</span><select value={form.payBasis} onChange={e=>setForm({...form,payBasis:e.target.value})}><option value="monthly">Monthly salary</option><option value="daily">Daily rate</option><option value="hourly">Hourly rate</option></select></label><label><span>Base {form.payBasis==='monthly'?'salary':'rate'} (PHP)</span><input type="number" min="0" step="0.01" required value={form.baseRate} onChange={e=>setForm({...form,baseRate:e.target.value})}/></label><label><span>Pay frequency</span><select value={form.payFrequency} onChange={e=>setForm({...form,payFrequency:e.target.value})}><option value="weekly">Weekly</option><option value="biweekly">Every two weeks</option><option value="semi_monthly">Semi-monthly</option><option value="monthly">Monthly</option></select></label><label><span>Standard hours/day</span><input type="number" min="0.01" max="24" step="0.25" required value={form.standardHoursPerDay} onChange={e=>setForm({...form,standardHoursPerDay:e.target.value})}/></label><label><span>Tax status</span><select value={form.taxStatus} onChange={e=>setForm({...form,taxStatus:e.target.value})}><option value="taxable">Taxable</option><option value="exempt">Tax exempt</option></select></label><label><span>Effective date</span><input type="date" value={form.effectiveDate} onChange={e=>setForm({...form,effectiveDate:e.target.value})}/></label></div></fieldset><fieldset><legend>Statutory contribution allocation</legend><div className="payroll-field-grid"><label className="tax-active"><input type="checkbox" checked={form.autoCalculateContributions&&form.payBasis==='monthly'} disabled={form.payBasis!=='monthly'} onChange={e=>setForm({...form,autoCalculateContributions:e.target.checked})}/>Automatically calculate SSS, PhilHealth, and Pag-IBIG from monthly salary</label>{form.payFrequency==='semi_monthly'&&form.autoCalculateContributions&&form.payBasis==='monthly'&&<label><span>Deduction schedule</span><select value={form.contributionDeductionSchedule} onChange={e=>setForm({...form,contributionDeductionSchedule:e.target.value})}><option value="split_evenly">Split evenly between cutoffs</option><option value="first_cutoff">Deduct on first cutoff</option><option value="second_cutoff">Deduct on second cutoff</option></select></label>}{(!form.autoCalculateContributions||form.payBasis!=='monthly')&&[['sssEmployeeShare','SSS per pay period'],['philhealthEmployeeShare','PhilHealth per pay period'],['pagibigEmployeeShare','Pag-IBIG per pay period']].map(([key,label])=><label key={key}><span>{label}</span><input type="number" min="0" step="0.01" value={form[key]} onChange={e=>setForm({...form,[key]:e.target.value})}/></label>)}</div></fieldset>{['earning','deduction'].map(type=><fieldset key={type}><legend>{type==='earning'?'Recurring earnings':'Recurring deductions'}</legend>{form.components.map((item,index)=>item.type===type&&<div className="payroll-component" key={index}><input aria-label="Name" placeholder={type==='earning'?'Allowance name':'Deduction name'} value={item.name} onChange={e=>updateItem(index,'name',e.target.value)} required/><select aria-label="Calculation" value={item.calculation} onChange={e=>updateItem(index,'calculation',e.target.value)}><option value="fixed">Fixed amount</option><option value="percentage">Percentage</option></select><input aria-label="Amount" type="number" min="0" max={item.calculation==='percentage'?'100':undefined} step="0.01" value={item.amount} onChange={e=>updateItem(index,'amount',e.target.value)} required/><label className="payroll-check"><input type="checkbox" checked={item.isTaxable} onChange={e=>updateItem(index,'isTaxable',e.target.checked)}/>Taxable</label><button type="button" onClick={()=>setForm({...form,components:form.components.filter((_,i)=>i!==index)})}>Remove</button></div>)}<button className="add-payroll-item" type="button" onClick={()=>addItem(type)}>+ Add {type}</button></fieldset>)}<label className="payroll-notes"><span>Notes</span><textarea rows="3" value={form.notes} onChange={e=>setForm({...form,notes:e.target.value})} placeholder="Internal payroll notes"/></label></form>}</main></div></section>;
+  return <section className="payroll-setup-view"><div className="module-title"><div><span>Payroll</span><h1>Salary Setup</h1><p>Set each employee's compensation and recurring payroll items.</p></div></div>{message&&<p className="rbac-message" role="status">{message}</p>}<div className="payroll-setup-layout"><aside className="payroll-employee-list"><label><span>Find employee</span><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Name or employee number"/></label><div>{employees.map(employee=><button type="button" className={selected?.id===employee.id?'selected':''} key={employee.id} onClick={()=>choose(employee)}><span><strong>{employee.firstName} {employee.lastName}</strong><small>{employee.employeeNumber} · {employee.jobTitle||'No position'}</small></span><b>{employee.baseRate!=null?`₱${Number(employee.baseRate).toLocaleString()}`:'Not set'}</b></button>)}</div></aside><main className="payroll-editor">{!selected?<div className="time-entry-empty-state"><strong>Choose an employee</strong><p>Select someone from the list to configure their payroll details.</p></div>:<form onSubmit={save}><div className="payroll-editor-heading"><div><span>Payroll profile</span><h2>{selected.firstName} {selected.lastName}</h2></div><button disabled={!permission?.update||saving}>{saving?'Saving…':'Save setup'}</button></div><fieldset><legend>Compensation</legend><div className="payroll-field-grid"><label><span>Pay basis</span><select value={form.payBasis} onChange={e=>setForm({...form,payBasis:e.target.value})}><option value="monthly">Monthly salary</option><option value="daily">Daily rate</option><option value="hourly">Hourly rate</option></select></label><label><span>Base {form.payBasis==='monthly'?'salary':'rate'} (PHP)</span><input type="number" min="0" step="0.01" required value={form.baseRate} onChange={e=>setForm({...form,baseRate:e.target.value,monthlyContributionBase:form.payBasis==='monthly'?e.target.value:form.monthlyContributionBase})}/></label><label><span>Monthly statutory contribution base (PHP)</span><input type="number" min="0.01" step="0.01" required value={form.monthlyContributionBase} onChange={e=>setForm({...form,monthlyContributionBase:e.target.value})}/></label><label><span>Pay frequency</span><select value={form.payFrequency} onChange={e=>setForm({...form,payFrequency:e.target.value})}><option value="weekly">Weekly</option><option value="biweekly">Every two weeks</option><option value="semi_monthly">Semi-monthly</option><option value="monthly">Monthly</option></select></label><label><span>Standard hours/day</span><input type="number" min="0.01" max="24" step="0.25" required value={form.standardHoursPerDay} onChange={e=>setForm({...form,standardHoursPerDay:e.target.value})}/></label><label><span>Tax status</span><select value={form.taxStatus} onChange={e=>setForm({...form,taxStatus:e.target.value})}><option value="taxable">Taxable</option><option value="exempt">Tax exempt</option></select></label><label className="tax-active"><input type="checkbox" checked={form.isMinimumWageEarner} onChange={e=>setForm({...form,isMinimumWageEarner:e.target.checked})}/>Minimum-wage earner</label>{form.isMinimumWageEarner&&<><label><span>Applicable wage region</span><input required value={form.minimumWageRegion} onChange={e=>setForm({...form,minimumWageRegion:e.target.value})} placeholder="e.g. NCR"/></label><label><span>Current minimum daily wage (PHP)</span><input type="number" min="0.01" step="0.01" required value={form.minimumDailyWage} onChange={e=>setForm({...form,minimumDailyWage:e.target.value})}/></label></>}<label><span>Effective date</span><input type="date" value={form.effectiveDate} onChange={e=>setForm({...form,effectiveDate:e.target.value})}/></label></div></fieldset><fieldset><legend>Statutory contribution allocation</legend><div className="payroll-field-grid"><label className="tax-active"><input type="checkbox" checked={form.autoCalculateContributions} onChange={e=>setForm({...form,autoCalculateContributions:e.target.checked})}/>Automatically calculate employee and employer statutory shares</label>{form.autoCalculateContributions&&<label><span>Deduction schedule</span><select value={form.contributionDeductionSchedule} onChange={e=>setForm({...form,contributionDeductionSchedule:e.target.value})}>{form.payFrequency==='semi_monthly'&&<option value="split_evenly">Split evenly between cutoffs</option>}<option value="first_cutoff">Deduct in first half of month</option><option value="second_cutoff">Deduct in second half of month</option></select></label>}{!form.autoCalculateContributions&&[['sssEmployeeShare','SSS per pay period'],['philhealthEmployeeShare','PhilHealth per pay period'],['pagibigEmployeeShare','Pag-IBIG per pay period']].map(([key,label])=><label key={key}><span>{label}</span><input type="number" min="0" step="0.01" value={form[key]} onChange={e=>setForm({...form,[key]:e.target.value})}/></label>)}</div></fieldset>{['earning','deduction'].map(type=><fieldset key={type}><legend>{type==='earning'?'Recurring earnings':'Recurring deductions'}</legend>{form.components.map((item,index)=>item.type===type&&<div className="payroll-component" key={index}><input aria-label="Name" placeholder={type==='earning'?'Allowance name':'Deduction name'} value={item.name} onChange={e=>updateItem(index,'name',e.target.value)} required/><select aria-label="Calculation" value={item.calculation} onChange={e=>updateItem(index,'calculation',e.target.value)}><option value="fixed">Fixed amount</option><option value="percentage">Percentage</option></select><input aria-label="Amount" type="number" min="0" max={item.calculation==='percentage'?'100':undefined} step="0.01" value={item.amount} onChange={e=>updateItem(index,'amount',e.target.value)} required/>{type==='earning'&&<select aria-label="Statutory benefit category" value={item.benefitCategory||''} onChange={e=>updateItem(index,'benefitCategory',e.target.value)}><option value="">Not a statutory benefit</option><option value="rice">Rice subsidy</option><option value="uniform">Uniform/clothing</option><option value="medical_dependents">Dependent medical allowance</option><option value="medical_assistance">Medical assistance</option><option value="laundry">Laundry allowance</option><option value="achievement_award">Achievement award</option><option value="christmas_gifts">Christmas/anniversary gift</option><option value="cba_productivity">CBA/productivity incentive</option><option value="overtime_meal">Overtime meal</option><option value="thirteenth_month">13th month/other benefits</option></select>}<label className="payroll-check"><input type="checkbox" checked={item.isTaxable} disabled={Boolean(item.benefitCategory)} onChange={e=>updateItem(index,'isTaxable',e.target.checked)}/>Taxable</label><button type="button" onClick={()=>setForm({...form,components:form.components.filter((_,i)=>i!==index)})}>Remove</button></div>)}<button className="add-payroll-item" type="button" onClick={()=>addItem(type)}>+ Add {type}</button></fieldset>)}<label className="payroll-notes"><span>Notes</span><textarea rows="3" value={form.notes} onChange={e=>setForm({...form,notes:e.target.value})} placeholder="Internal payroll notes"/></label></form>}</main></div></section>;
 }
 
 function payoutPeriodForFrequency(frequency, referenceDate=new Date()){
@@ -892,7 +910,8 @@ function PayoutView(){
       </div>
       <div className="payout-breakdown">
         <section><h2>Earnings</h2><dl><div><dt>Configured base pay</dt><dd>{money(result.salary.periodBase)}</dd></div>{result.earnings.map((item,index)=><div key={payoutItemKey('earning',item,index)}><dt>{item.name}</dt><dd>{money(item.value)}</dd></div>)}<div className="total"><dt>Gross payout</dt><dd>{money(result.grossPay)}</dd></div></dl></section>
-        <section><h2>Deductions</h2><dl><div><dt>Attendance / unpaid holiday</dt><dd>{money(result.salary.attendanceDeduction)}</dd></div><div><dt>SSS</dt><dd>{money(result.contributions.sssEmployee)}</dd></div><div><dt>PhilHealth</dt><dd>{money(result.contributions.philhealthEmployee)}</dd></div><div><dt>Pag-IBIG</dt><dd>{money(result.contributions.pagibigEmployee)}</dd></div><div><dt>Union dues</dt><dd>{money(result.unionDues)}</dd></div>{result.deductions.map((item,index)=><div key={payoutItemKey('deduction',item,index)}><dt>{item.name}</dt><dd>{money(item.value)}</dd></div>)}<div><dt>Withholding tax</dt><dd>{money(result.tax.amount)}</dd></div><div className="total"><dt>Net payout</dt><dd>{money(result.netPay)}</dd></div></dl></section>
+        <section><h2>Deductions</h2><dl><div><dt>Attendance / unpaid holiday</dt><dd>{money(result.salary.attendanceDeduction)}</dd></div><div><dt>SSS</dt><dd>{money(result.contributions.sssEmployee)}</dd></div><div><dt>PhilHealth</dt><dd>{money(result.contributions.philhealthEmployee)}</dd></div><div><dt>Pag-IBIG</dt><dd>{money(result.contributions.pagibigEmployee)}</dd></div><div><dt>Union dues</dt><dd>{money(result.unionDues)}</dd></div>{result.deductions.map((item,index)=><div key={payoutItemKey('deduction',item,index)}><dt>{item.name}</dt><dd>{money(item.value)}</dd></div>)}<div><dt>Withholding tax</dt><dd>{money(result.tax.amount)}</dd></div>{result.tax.refund>0&&<div><dt>Year-end tax refund</dt><dd>-{money(result.tax.refund)}</dd></div>}<div className="total"><dt>Net payout</dt><dd>{money(result.netPay)}</dd></div></dl></section>
+        <section><h2>Employer contributions</h2><dl><div><dt>SSS employer share</dt><dd>{money(result.contributions.sssEmployer)}</dd></div><div><dt>SSS EC</dt><dd>{money(result.contributions.sssEcEmployer)}</dd></div><div><dt>PhilHealth employer share</dt><dd>{money(result.contributions.philhealthEmployer)}</dd></div><div><dt>Pag-IBIG employer share</dt><dd>{money(result.contributions.pagibigEmployer)}</dd></div><div className="total"><dt>Total employer cost</dt><dd>{money(result.contributions.totalEmployer)}</dd></div></dl></section>
       </div>
       <section className="payout-attendance">
         <div className="friendly-table-heading"><div><span>Attendance computation</span><h2>{result.employee.name}</h2></div><small>{result.attendance.scheduledDays} scheduled days</small></div>
@@ -900,6 +919,262 @@ function PayoutView(){
         {result.attendance.days.map(item=><div className={`payout-attendance-row${item.penaltyMinutes||item.incompletePunches?' exception':''}`} key={item.date}><span>{new Date(`${item.date}T00:00:00`).toLocaleDateString()}</span><b>{attendanceStatus(item)}</b><span>{item.lateMinutes} min</span><span>{item.breakExcessMinutes} min</span><span>{item.undertimeMinutes} min</span><strong>{money(item.deduction)}</strong></div>)}
       </section>
     </>}
+  </section>;
+}
+
+const payrollRunFrequencyLabels={weekly:'Weekly',biweekly:'Every two weeks',semi_monthly:'Semi-monthly',monthly:'Monthly'};
+
+function PayrollRuns({ user, onNavigate }) {
+  const permission=effectiveModulePermission(user,'payroll_setup');
+  const initialPeriod=payoutPeriodForFrequency('semi_monthly');
+  const[employees,setEmployees]=useState([]);
+  const[runs,setRuns]=useState([]);
+  const[frequency,setFrequency]=useState('semi_monthly');
+  const[periodStart,setPeriodStart]=useState(initialPeriod.start);
+  const[periodEnd,setPeriodEnd]=useState(initialPeriod.end);
+  const[payDate,setPayDate]=useState(initialPeriod.payDate);
+  const[selectedIds,setSelectedIds]=useState([]);
+  const[previews,setPreviews]=useState([]);
+  const[previewErrors,setPreviewErrors]=useState([]);
+  const[progress,setProgress]=useState({ completed:0,total:0 });
+  const[currentRun,setCurrentRun]=useState(null);
+  const[loading,setLoading]=useState(true);
+  const[calculating,setCalculating]=useState(false);
+  const[creating,setCreating]=useState(false);
+  const[actionRunId,setActionRunId]=useState(null);
+  const[message,setMessage]=useState('');
+  const[error,setError]=useState('');
+  const calculationRequestRef=useRef(null);
+
+  const eligibleEmployees=employees.filter(employee=>employee.employmentStatus==='active'&&employee.payFrequency===frequency);
+  const selectedEmployees=eligibleEmployees.filter(employee=>selectedIds.includes(String(employee.id)));
+  const warningCount=previews.filter(preview=>preview.attendance?.requiresReview).length;
+  const grossTotal=previews.reduce((sum,preview)=>sum+Number(preview.grossPay||0),0);
+  const deductionTotal=previews.reduce((sum,preview)=>sum+Number(preview.totalDeductions||0),0);
+  const netTotal=previews.reduce((sum,preview)=>sum+Number(preview.netPay||0),0);
+  const batchReady=previews.length===selectedEmployees.length&&previews.length>0&&!previewErrors.length&&!warningCount&&!currentRun;
+  const money=value=>`₱${Number(value||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+  const dateLabel=value=>new Date(`${String(value).slice(0,10)}T00:00:00`).toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'});
+
+  async function loadRuns(signal) {
+    const response=await fetch('/api/payroll/runs',{signal,cache:'no-store'});
+    const data=await response.json();
+    if(!response.ok)throw new Error(data.error||'Unable to load payroll runs.');
+    setRuns(data.runs||[]);
+  }
+
+  useEffect(()=>{
+    const controller=new AbortController();
+    (async()=>{
+      setLoading(true);setError('');
+      try{
+        const[employeeResponse,runsResponse]=await Promise.all([
+          fetch('/api/payroll/employees',{signal:controller.signal,cache:'no-store'}),
+          fetch('/api/payroll/runs',{signal:controller.signal,cache:'no-store'})
+        ]);
+        const[employeeData,runsData]=await Promise.all([employeeResponse.json(),runsResponse.json()]);
+        if(!employeeResponse.ok)throw new Error(employeeData.error||'Unable to load payroll employees.');
+        if(!runsResponse.ok)throw new Error(runsData.error||'Unable to load payroll runs.');
+        const loadedEmployees=employeeData.employees||[];
+        setEmployees(loadedEmployees);setRuns(runsData.runs||[]);
+        setSelectedIds(loadedEmployees.filter(employee=>employee.employmentStatus==='active'&&employee.payFrequency==='semi_monthly').map(employee=>String(employee.id)));
+      }catch(loadError){if(loadError.name!=='AbortError')setError(loadError.message);}
+      finally{if(!controller.signal.aborted)setLoading(false);}
+    })();
+    return()=>{controller.abort();calculationRequestRef.current?.abort();};
+  },[]);
+
+  function invalidateCalculation() {
+    calculationRequestRef.current?.abort();calculationRequestRef.current=null;
+    setCalculating(false);setPreviews([]);setPreviewErrors([]);setProgress({completed:0,total:0});setCurrentRun(null);setMessage('');setError('');
+  }
+
+  function changeFrequency(nextFrequency) {
+    invalidateCalculation();setFrequency(nextFrequency);
+    const period=payoutPeriodForFrequency(nextFrequency);
+    setPeriodStart(period.start);setPeriodEnd(period.end);setPayDate(period.payDate);
+    setSelectedIds(employees.filter(employee=>employee.employmentStatus==='active'&&employee.payFrequency===nextFrequency).map(employee=>String(employee.id)));
+  }
+
+  function changePeriod(field,value) {
+    invalidateCalculation();
+    if(field==='start')setPeriodStart(value);
+    if(field==='end'){setPeriodEnd(value);if(payDate<value)setPayDate(value);}
+    if(field==='payDate')setPayDate(value);
+  }
+
+  function toggleEmployee(employeeId) {
+    invalidateCalculation();
+    const id=String(employeeId);
+    setSelectedIds(current=>current.includes(id)?current.filter(item=>item!==id):[...current,id]);
+  }
+
+  function toggleAllEmployees() {
+    invalidateCalculation();
+    setSelectedIds(selectedIds.length===eligibleEmployees.length?[]:eligibleEmployees.map(employee=>String(employee.id)));
+  }
+
+  async function calculateBatch() {
+    if(!selectedEmployees.length||calculating)return;
+    calculationRequestRef.current?.abort();
+    const controller=new AbortController();calculationRequestRef.current=controller;
+    setCalculating(true);setPreviews([]);setPreviewErrors([]);setCurrentRun(null);setMessage('');setError('');
+    setProgress({completed:0,total:selectedEmployees.length});
+    const calculated=[];const failures=[];
+    try{
+      for(let start=0;start<selectedEmployees.length;start+=5){
+        const chunk=selectedEmployees.slice(start,start+5);
+        const results=await Promise.all(chunk.map(async employee=>{
+          try{
+            const response=await fetch(`/api/payroll/employees/${employee.id}/payout-preview`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({periodStart,periodEnd,payDate}),signal:controller.signal});
+            const data=await response.json();
+            if(!response.ok)throw new Error(data.error||'Unable to calculate payout.');
+            return{ preview:data };
+          }catch(previewError){
+            if(previewError.name==='AbortError')throw previewError;
+            return{ error:{ employeeId:String(employee.id),employeeName:`${employee.firstName} ${employee.lastName}`,message:previewError.message } };
+          }
+        }));
+        if(calculationRequestRef.current!==controller)return;
+        results.forEach(result=>{if(result.preview)calculated.push(result.preview);else failures.push(result.error);});
+        setPreviews([...calculated]);setPreviewErrors([...failures]);setProgress({completed:Math.min(start+chunk.length,selectedEmployees.length),total:selectedEmployees.length});
+      }
+      if(failures.length)setError(`${failures.length} employee payout${failures.length===1?'':'s'} could not be calculated. Resolve the listed issues and calculate again.`);
+      else if(calculated.some(preview=>preview.attendance?.requiresReview))setError('Resolve every attendance warning before creating this payroll run.');
+      else setMessage(`${calculated.length} employee payout${calculated.length===1?'':'s'} calculated. Review the totals, then create the draft run.`);
+    }catch(batchError){if(batchError.name!=='AbortError')setError(batchError.message);}
+    finally{if(calculationRequestRef.current===controller){calculationRequestRef.current=null;setCalculating(false);}}
+  }
+
+  async function createDraft() {
+    if(!batchReady||creating)return;
+    setCreating(true);setMessage('');setError('');
+    try{
+      const response=await fetch('/api/payroll/runs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({periodStart,periodEnd,payDate,items:previews})});
+      const data=await response.json();
+      if(!response.ok)throw new Error(data.error||'Unable to create the payroll run.');
+      setCurrentRun(data.run);setMessage(`Draft payroll run #${data.run.id} was created. Finalize it when the batch is approved.`);
+      await loadRuns();
+    }catch(createError){setError(createError.message);}
+    finally{setCreating(false);}
+  }
+
+  async function changeRunStatus(run,nextStatus) {
+    const verb=nextStatus==='finalized'?'finalize':'void';
+    const confirmed=await confirmModal(nextStatus==='finalized'
+      ?`Finalize payroll run #${run.id}? Its employee calculations will be locked and sent to Disbursement.`
+      :`Void payroll run #${run.id}? This cannot be undone.`,`${verb.charAt(0).toUpperCase()+verb.slice(1)} payroll run`);
+    if(!confirmed)return;
+    setActionRunId(run.id);setMessage('');setError('');
+    try{
+      const response=await fetch(`/api/payroll/runs/${run.id}/status`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:nextStatus})});
+      const data=await response.json();
+      if(!response.ok)throw new Error(data.error||`Unable to ${verb} the payroll run.`);
+      if(String(currentRun?.id)===String(run.id))setCurrentRun(data.run);
+      setMessage(`Payroll run #${run.id} is now ${data.run.status}.`);await loadRuns();
+    }catch(statusError){setError(statusError.message);}
+    finally{setActionRunId(null);}
+  }
+
+  return <section className="overview-view payroll-runs-view">
+    <div className="module-title"><div><span>Payroll</span><h1>Payroll Runs</h1><p>Calculate a complete employee batch, create a controlled draft, and finalize it for disbursement.</p></div></div>
+    {message&&<p className="payroll-run-message success" role="status">{message}</p>}
+    {error&&<p className="payroll-run-message error" role="alert">{error}</p>}
+    <section className="payroll-run-builder" aria-labelledby="payroll-run-builder-title">
+      <header><div><span>Step 1</span><h2 id="payroll-run-builder-title">Choose the payroll period</h2></div><small>All selected employees must use the same pay frequency.</small></header>
+      <div className="payroll-run-controls">
+        <label><span>Pay frequency</span><select value={frequency} disabled={calculating||creating} onChange={event=>changeFrequency(event.target.value)}>{Object.entries(payrollRunFrequencyLabels).map(([value,label])=><option value={value} key={value}>{label}</option>)}</select></label>
+        <label><span>Period start</span><input type="date" value={periodStart} disabled={calculating||creating} onChange={event=>changePeriod('start',event.target.value)} required/></label>
+        <label><span>Period end</span><input type="date" value={periodEnd} disabled={calculating||creating} onChange={event=>changePeriod('end',event.target.value)} required/></label>
+        <label><span>Pay date</span><input type="date" min={periodEnd||undefined} value={payDate} disabled={calculating||creating} onChange={event=>changePeriod('payDate',event.target.value)} required/></label>
+      </div>
+      <div className="payroll-run-selection-heading"><div><span>Step 2</span><h2>Select employees</h2><small>{eligibleEmployees.length} active {payrollRunFrequencyLabels[frequency].toLowerCase()} employee{eligibleEmployees.length===1?'':'s'}</small></div><button type="button" disabled={!eligibleEmployees.length||calculating||creating} onClick={toggleAllEmployees}>{selectedIds.length===eligibleEmployees.length&&eligibleEmployees.length?'Clear all':'Select all'}</button></div>
+      <div className="payroll-run-employee-list">{eligibleEmployees.map(employee=><label className={selectedIds.includes(String(employee.id))?'selected':''} key={employee.id}><input type="checkbox" checked={selectedIds.includes(String(employee.id))} disabled={calculating||creating} onChange={()=>toggleEmployee(employee.id)}/><i aria-hidden="true"/><span><strong>{employee.firstName} {employee.lastName}</strong><small>{employee.employeeNumber} · {employee.jobTitle||'No position'}</small></span><b>{employee.payBasis?payrollRunFrequencyLabels[employee.payFrequency]:'Setup required'}</b></label>)}{!loading&&!eligibleEmployees.length&&<div className="payroll-run-empty">No active employees have this pay frequency configured. Update Salary Setup first.</div>}</div>
+      <div className="payroll-run-calculate"><div><span>Step 3</span><strong>Calculate and review</strong><small>Calculations remain valid for 30 minutes and must be recreated after attendance changes.</small></div><button type="button" disabled={!selectedEmployees.length||calculating||creating} onClick={calculateBatch}>{calculating?`Calculating ${progress.completed}/${progress.total}…`:`Calculate ${selectedEmployees.length} payout${selectedEmployees.length===1?'':'s'}`}</button></div>
+    </section>
+    {(previews.length>0||previewErrors.length>0)&&<section className="payroll-run-review" aria-labelledby="payroll-run-review-title">
+      <header><div><span>Step 4</span><h2 id="payroll-run-review-title">Review the batch</h2></div><small>{previews.length} calculated · {warningCount} attendance warning{warningCount===1?'':'s'} · {previewErrors.length} failed</small></header>
+      <div className="payroll-run-summary"><article><span>Employees</span><strong>{previews.length}</strong></article><article><span>Gross payroll</span><strong>{money(grossTotal)}</strong></article><article><span>Total deductions</span><strong>{money(deductionTotal)}</strong></article><article className="net"><span>Net payroll</span><strong>{money(netTotal)}</strong></article></div>
+      <div className="payroll-run-table"><div className="payroll-run-row head"><span>Employee</span><span>Gross</span><span>Deductions</span><span>Net pay</span><span>Attendance</span></div>{previews.map(preview=><div className={`payroll-run-row${preview.attendance?.requiresReview?' warning':''}`} key={preview.employeeId}><div><strong>{preview.employee.name}</strong><small>{preview.employee.employeeNumber}</small></div><span>{money(preview.grossPay)}</span><span>{money(preview.totalDeductions)}</span><strong>{money(preview.netPay)}</strong><b>{preview.attendance?.requiresReview?'Review required':'Ready'}</b></div>)}{previewErrors.map(item=><div className="payroll-run-row failed" key={item.employeeId}><div><strong>{item.employeeName}</strong><small>Calculation failed</small></div><p>{item.message}</p></div>)}</div>
+      {warningCount>0&&<div className="payroll-run-warning"><span>Attendance must be resolved before a draft can be created.</span><button type="button" onClick={()=>onNavigate('time_entries')}>Open Time Entries</button></div>}
+      <footer><div><span>Step 5</span><strong>{currentRun?`Draft run #${currentRun.id} created`:'Create the controlled draft'}</strong><small>{currentRun?'Finalize this run to make it available in Disbursement.':'Creating the draft stores this exact signed calculation batch.'}</small></div>{!currentRun?<button className="primary" type="button" disabled={!batchReady||!permission?.create||creating} onClick={createDraft}>{creating?'Creating draft…':'Create draft run'}</button>:currentRun.status==='draft'?<button className="primary" type="button" disabled={!permission?.update||actionRunId===currentRun.id} onClick={()=>changeRunStatus(currentRun,'finalized')}>{actionRunId===currentRun.id?'Finalizing…':'Finalize payroll'}</button>:currentRun.status==='finalized'?<button className="primary" type="button" onClick={()=>onNavigate('disbursement')}>Open Disbursement</button>:null}</footer>
+    </section>}
+    <section className="payroll-run-history" aria-labelledby="payroll-run-history-title"><header><div><span>Run history</span><h2 id="payroll-run-history-title">Payroll batches</h2></div><b>{runs.length}</b></header><div className="payroll-run-history-table"><div className="payroll-history-row head"><span>Run</span><span>Period</span><span>Pay date</span><span>Employees</span><span>Net payroll</span><span>Status</span><span>Actions</span></div>{runs.map(run=><div className="payroll-history-row" key={run.id}><strong>#{run.id}</strong><span>{dateLabel(run.periodStart)} – {dateLabel(run.periodEnd)}</span><span>{dateLabel(run.payDate)}</span><span>{run.employeeCount}</span><span>{money(run.netPay)}</span><b className={`payroll-run-status ${run.status}`}>{run.status}</b><div>{run.status==='draft'&&permission?.update&&<button type="button" disabled={actionRunId===run.id} onClick={()=>changeRunStatus(run,'finalized')}>Finalize</button>}{run.status!=='void'&&permission?.update&&<button className="danger" type="button" disabled={actionRunId===run.id} onClick={()=>changeRunStatus(run,'void')}>Void</button>}{run.status==='finalized'&&<button type="button" onClick={()=>onNavigate('disbursement')}>Disburse</button>}</div></div>)}{!loading&&!runs.length&&<div className="payroll-run-empty">No payroll runs have been created yet.</div>}</div></section>
+  </section>;
+}
+
+function Disbursement({ user }) {
+  const permission=effectiveModulePermission(user,'disbursement');
+  const[runs,setRuns]=useState([]);
+  const[selectedRunId,setSelectedRunId]=useState('');
+  const[detail,setDetail]=useState(null);
+  const[drafts,setDrafts]=useState({});
+  const[loading,setLoading]=useState(true);
+  const[savingItemId,setSavingItemId]=useState(null);
+  const[message,setMessage]=useState('');
+  const money=value=>`₱${Number(value||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+  const dateLabel=value=>value?new Date(`${String(value).slice(0,10)}T00:00:00`).toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'}):'—';
+  const methodLabel=value=>({bank_transfer:'Bank transfer',cash:'Cash',check:'Check',e_wallet:'E-wallet'}[value]||'Not selected');
+
+  async function refreshRuns(signal) {
+    const response=await fetch('/api/payroll/disbursements',{signal,cache:'no-store'});
+    const data=await response.json();
+    if(!response.ok)throw new Error(data.error||'Unable to load finalized payroll runs.');
+    setRuns(data.runs||[]);
+    return data.runs||[];
+  }
+
+  useEffect(()=>{
+    const controller=new AbortController();
+    setLoading(true);setMessage('');
+    refreshRuns(controller.signal).then(loaded=>{if(loaded.length)setSelectedRunId(String(loaded[0].id));}).catch(error=>{if(error.name!=='AbortError')setMessage(error.message);}).finally(()=>{if(!controller.signal.aborted)setLoading(false);});
+    return()=>controller.abort();
+  },[]);
+
+  useEffect(()=>{
+    if(!selectedRunId){setDetail(null);setDrafts({});return undefined;}
+    const controller=new AbortController();
+    setLoading(true);setMessage('');
+    fetch(`/api/payroll/disbursements/${selectedRunId}`,{signal:controller.signal,cache:'no-store'}).then(async response=>{
+      const data=await response.json();
+      if(!response.ok)throw new Error(data.error||'Unable to load disbursement details.');
+      setDetail(data);
+      setDrafts(Object.fromEntries((data.items||[]).map(item=>[item.id,{status:item.status||'pending',method:item.method||'',reference:item.reference||'',notes:item.notes||''}])));
+    }).catch(error=>{if(error.name!=='AbortError')setMessage(error.message);}).finally(()=>{if(!controller.signal.aborted)setLoading(false);});
+    return()=>controller.abort();
+  },[selectedRunId]);
+
+  function updateDraft(itemId,key,value){
+    setDrafts(current=>({...current,[itemId]:{...current[itemId],[key]:value}}));
+  }
+
+  async function saveItem(item) {
+    const draft=drafts[item.id];
+    if(!draft||savingItemId)return;
+    setSavingItemId(item.id);setMessage('');
+    try{
+      const response=await fetch(`/api/payroll/disbursements/${selectedRunId}/items/${item.id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(draft)});
+      const data=await response.json();
+      if(!response.ok)throw new Error(data.error||'Unable to update the disbursement.');
+      setDetail(current=>({...current,items:current.items.map(currentItem=>currentItem.id===item.id?{...currentItem,...data.item,disbursedBy:data.item.status==='paid'?user.displayName:null}:currentItem)}));
+      setMessage(`${item.firstName} ${item.lastName}'s disbursement was updated.`);
+      await refreshRuns();
+    }catch(error){setMessage(error.message);}
+    finally{setSavingItemId(null);}
+  }
+
+  const items=detail?.items||[];
+  const counts={pending:0,processing:0,paid:0,failed:0};
+  for(const item of items)counts[item.status]=(counts[item.status]||0)+1;
+  const paidAmount=items.filter(item=>item.status==='paid').reduce((sum,item)=>sum+Number(item.netPay||0),0);
+
+  return <section className="overview-view disbursement-view">
+    <div className="module-title"><div><span>Payroll</span><h1>Disbursement</h1><p>Release finalized payroll and keep an auditable payment status, method, and reference for every employee.</p></div></div>
+    {message&&<p className="rbac-message" role="status">{message}</p>}
+    <div className="disbursement-layout">
+      <aside className="disbursement-runs"><header><div><span>Finalized payroll</span><h2>Runs ready for release</h2></div><b>{runs.length}</b></header><div className="disbursement-run-list">{runs.map(run=><button type="button" className={String(run.id)===selectedRunId?'selected':''} key={run.id} onClick={()=>setSelectedRunId(String(run.id))}><span><strong>{dateLabel(run.periodStart)} – {dateLabel(run.periodEnd)}</strong><small>Pay date {dateLabel(run.payDate)} · {run.employeeCount} employees</small></span><b>{run.paidCount}/{run.employeeCount} paid</b></button>)}{!loading&&!runs.length&&<p className="disbursement-empty">Finalize a payroll run before disbursing employee pay.</p>}</div></aside>
+      <main className="disbursement-detail">{!detail?<div className="disbursement-empty">{loading?'Loading disbursements…':'Choose a finalized payroll run.'}</div>:<><header><div><span>Payment batch</span><h2>{dateLabel(detail.run.periodStart)} – {dateLabel(detail.run.periodEnd)}</h2></div><small>Pay date {dateLabel(detail.run.payDate)}</small></header><div className="disbursement-summary"><article><span>Total net payroll</span><strong>{money(items.reduce((sum,item)=>sum+Number(item.netPay||0),0))}</strong></article><article><span>Paid amount</span><strong>{money(paidAmount)}</strong></article><article><span>Pending / processing</span><strong>{counts.pending} / {counts.processing}</strong></article><article><span>Paid / failed</span><strong>{counts.paid} / {counts.failed}</strong></article></div><div className="disbursement-table"><div className="disbursement-row head"><span>Employee</span><span>Net pay</span><span>Status</span><span>Method</span><span>Reference</span><span>Notes</span><span>Action</span></div>{items.map(item=>{const draft=drafts[item.id]||{};const locked=item.status==='paid';return <div className="disbursement-row" key={item.id}><div><strong>{item.firstName} {item.lastName}</strong><small>{item.employeeNumber}{item.disbursedAt?` · Paid ${dateLabel(item.disbursedAt)}`:''}</small></div><span>{money(item.netPay)}</span><select aria-label={`${item.firstName} ${item.lastName} status`} className={`disbursement-status ${draft.status||item.status}`} value={draft.status||item.status} disabled={locked||!permission?.update} onChange={event=>updateDraft(item.id,'status',event.target.value)}><option value="pending">Pending</option><option value="processing">Processing</option><option value="paid">Paid</option><option value="failed">Failed</option></select><select aria-label={`${item.firstName} ${item.lastName} payment method`} value={draft.method||''} disabled={locked||!permission?.update} onChange={event=>updateDraft(item.id,'method',event.target.value)}><option value="">Select method</option><option value="bank_transfer">Bank transfer</option><option value="cash">Cash</option><option value="check">Check</option><option value="e_wallet">E-wallet</option></select><input aria-label={`${item.firstName} ${item.lastName} payment reference`} value={draft.reference||''} disabled={locked||!permission?.update} maxLength="100" placeholder="Transaction or receipt no." onChange={event=>updateDraft(item.id,'reference',event.target.value)}/><input aria-label={`${item.firstName} ${item.lastName} disbursement notes`} value={draft.notes||''} disabled={locked||!permission?.update} maxLength="500" placeholder={locked?`${methodLabel(item.method)} · ${item.reference||'No reference'}`:'Optional note'} onChange={event=>updateDraft(item.id,'notes',event.target.value)}/><button type="button" disabled={locked||!permission?.update||savingItemId===item.id} onClick={()=>saveItem(item)}>{locked?'Locked':savingItemId===item.id?'Saving…':'Save'}</button></div>})}</div></>}</main>
+    </div>
   </section>;
 }
 
@@ -1014,7 +1289,12 @@ function PayrollTaxCalculator({user}){
           <h2>Employee tax treatment</h2>
           <div className="payroll-field-grid">
             <label><span>Tax status</span><select value={profile.taxStatus} disabled={!permission?.update||savingProfile} onChange={event=>updateTaxProfile('taxStatus',event.target.value)}><option value="taxable">Taxable</option><option value="exempt">Tax exempt</option></select></label>
-            <label className="tax-active"><input type="checkbox" checked={profile.isMinimumWageEarner} disabled={!permission?.update||savingProfile} onChange={event=>updateTaxProfile('isMinimumWageEarner',event.target.checked)}/>Minimum wage earner</label>
+            <label><span>Monthly statutory contribution base</span><input type="number" min="0.01" step=".01" value={profile.monthlyContributionBase||''} disabled={!permission?.update||savingProfile} onChange={event=>updateTaxProfile('monthlyContributionBase',event.target.value)}/></label>
+            <label className="tax-active"><input type="checkbox" checked={profile.isMinimumWageEarner} disabled={!permission?.update||savingProfile} onChange={event=>updateTaxProfile('isMinimumWageEarner',event.target.checked)}/>Minimum-wage earner</label>
+            {profile.isMinimumWageEarner&&<>
+              <label><span>Applicable wage region</span><input value={profile.minimumWageRegion||''} disabled={!permission?.update||savingProfile} onChange={event=>updateTaxProfile('minimumWageRegion',event.target.value)}/></label>
+              <label><span>Current minimum daily wage</span><input type="number" min="0.01" step=".01" value={profile.minimumDailyWage||''} disabled={!permission?.update||savingProfile} onChange={event=>updateTaxProfile('minimumDailyWage',event.target.value)}/></label>
+            </>}
             {[['sssEmployeeShare','SSS employee share'],['philhealthEmployeeShare','PhilHealth employee share'],['pagibigEmployeeShare','Pag-IBIG employee share'],['unionDues','Union dues']].map(([key,label])=><label key={key}><span>{label} per pay period</span><input type="number" min="0" step=".01" value={profile[key]} disabled={!permission?.update||savingProfile} onChange={event=>updateTaxProfile(key,event.target.value)}/></label>)}
           </div>
           {settingsDirty&&<p className="rbac-message" role="status">{permission?.update?'Save these tax treatment changes before calculating a new preview.':'An authorized user must save this employee tax treatment before a preview can be calculated.'}</p>}
@@ -1032,7 +1312,7 @@ function PayrollTaxCalculator({user}){
           </div>
           <button className="save-tax" type="submit" disabled={calculating||savingProfile||settingsDirty}>{calculating?'Calculating…':'Calculate withholding'}</button>
         </form>
-        {result&&<div className="tax-result"><article><span>Gross compensation</span><strong>{money(result.grossCompensation)}</strong></article><article><span>Mandatory contributions</span><strong>{money(result.mandatoryContributions)}</strong></article><article><span>Taxable compensation</span><strong>{money(result.taxableIncome)}</strong></article><article><span>Withholding this period</span><strong>{money(result.tax)}</strong></article><article><span>Annualized tax</span><strong>{money(result.annualizedTax)}</strong></article><article><span>Year-end balance</span><strong>{money(result.yearEndBalance)}</strong></article><small>Table: {result.configuration.name}</small></div>}
+        {result&&<div className="tax-result"><article><span>Gross compensation</span><strong>{money(result.grossCompensation)}</strong></article><article><span>Employee contributions</span><strong>{money(result.mandatoryContributions)}</strong></article><article><span>Employer contributions</span><strong>{money(result.contributions.totalEmployer)}</strong></article><article><span>Taxable compensation</span><strong>{money(result.taxableIncome)}</strong></article><article><span>Withholding this period</span><strong>{money(result.tax)}</strong></article><article><span>Annualized tax</span><strong>{money(result.annualizedTax)}</strong></article><article><span>Year-end balance</span><strong>{money(result.yearEndBalance)}</strong></article><small>Table: {result.configuration.name}</small></div>}
       </>}</main>
     </div>
   </section>;

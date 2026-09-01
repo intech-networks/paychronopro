@@ -6,10 +6,15 @@ const monetaryFields = [
   'taxableIncome',
   'nonTaxableCompensation',
   'sssEmployee',
+  'sssEmployer',
+  'sssEcEmployer',
   'philhealthEmployee',
+  'philhealthEmployer',
   'pagibigEmployee',
+  'pagibigEmployer',
   'unionDues',
   'tax',
+  'taxRefund',
   'netPay'
 ];
 
@@ -66,18 +71,24 @@ export function validatePayrollRunInput(body) {
       ? item.deductions.reduce((sum, deduction) => sum + Number(deduction?.value || 0), 0)
       : Number(item?.recurringDeductions || 0);
     const nonTaxableEarnings = Array.isArray(item?.earnings)
-      ? item.earnings.filter((earning) => earning?.isTaxable === false)
-        .reduce((sum, earning) => sum + Number(earning?.value || 0), 0)
+      ? item.earnings.reduce((sum, earning) => sum + Number(
+        earning?.nonTaxableValue ?? (earning?.isTaxable === false ? earning?.value : 0)
+      ), 0)
       : 0;
     const values = {
       grossCompensation:item.grossCompensation ?? item.grossPay,
       taxableIncome:item.taxableIncome ?? item.tax?.taxableIncome,
       nonTaxableCompensation:item.nonTaxableCompensation ?? nonTaxableEarnings,
       sssEmployee:item.contributions?.sssEmployee ?? 0,
+      sssEmployer:item.contributions?.sssEmployer ?? 0,
+      sssEcEmployer:item.contributions?.sssEcEmployer ?? 0,
       philhealthEmployee:item.contributions?.philhealthEmployee ?? 0,
+      philhealthEmployer:item.contributions?.philhealthEmployer ?? 0,
       pagibigEmployee:item.contributions?.pagibigEmployee ?? 0,
+      pagibigEmployer:item.contributions?.pagibigEmployer ?? 0,
       unionDues:item.unionDues ?? 0,
       tax:item.tax?.amount ?? item.tax,
+      taxRefund:item.tax?.refund ?? item.taxRefund ?? 0,
       netPay:item.netPay
     };
     const normalized = Object.fromEntries(monetaryFields.map((field) => [field, readMoney(values[field])]));
@@ -99,18 +110,20 @@ export function validatePayrollRunInput(body) {
       + moneyCents(normalized.pagibigEmployee)
       + moneyCents(normalized.unionDues)
       + moneyCents(normalized.tax)
+      - moneyCents(normalized.taxRefund)
       + moneyCents(attendanceDeduction)
       + moneyCents(normalizedRecurringDeductions);
     if (item.totalDeductions !== undefined) {
-      const suppliedTotalDeductions = readMoney(item.totalDeductions);
-      if (suppliedTotalDeductions === null || moneyCents(suppliedTotalDeductions) !== deductionsCents) {
+      const suppliedTotalDeductions = Number(item.totalDeductions);
+      if (!Number.isFinite(suppliedTotalDeductions)
+        || Math.abs(suppliedTotalDeductions * 100 - Math.round(suppliedTotalDeductions * 100)) > 1e-7
+        || moneyCents(suppliedTotalDeductions) !== deductionsCents) {
         return { error:'A payroll calculation has inconsistent total deductions.' };
       }
     }
     const grossCompensationCents = moneyCents(normalized.grossCompensation);
     const expectedNetPayCents = grossCompensationCents - deductionsCents;
-    if (moneyCents(normalized.netPay) > grossCompensationCents
-      || moneyCents(normalized.netPay) !== expectedNetPayCents) {
+    if (moneyCents(normalized.netPay) !== expectedNetPayCents) {
       return { error:'A payroll calculation has an invalid net pay amount.' };
     }
     normalizedItems.push({ employeeId, ...normalized, calculation:item });

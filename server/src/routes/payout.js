@@ -3,8 +3,12 @@ import { config } from '../config.js';
 import { pool } from '../db/pool.js';
 import { requirePermission } from '../auth/authorization.js';
 import { isIsoDate, isPositiveInteger } from '../validation.js';
-import { allocateStatutoryContributions, calculateStatutoryContributions } from '../payroll/compliance.js';
-import { calculatePhilippineWithholding } from '../payroll/tax.js';
+import {
+  calculateStatutoryContributions,
+  classifyBenefits,
+  reconcileMonthlyStatutoryContributions
+} from '../payroll/compliance.js';
+import { calculatePhilippineWithholding, calculateYearEndAdjustment } from '../payroll/tax.js';
 import { calculateHolidayPayAdjustment } from '../payroll/holiday-pay.js';
 import {
   calculateOrdinaryWorkAdjustment,
@@ -73,6 +77,7 @@ payoutRouter.post(
                 employee.first_name AS "firstName", employee.last_name AS "lastName",
                 profile.pay_basis AS "payBasis", profile.pay_frequency AS "payFrequency",
                 profile.base_rate AS "baseRate",
+                profile.monthly_contribution_base AS "monthlyContributionBase",
                 profile.standard_hours_per_day AS "standardHoursPerDay",
                 profile.tax_status AS "taxStatus",
                 profile.is_minimum_wage_earner AS "isMinimumWageEarner",
@@ -82,6 +87,8 @@ payoutRouter.post(
                 profile.philhealth_employee_share AS "philhealthEmployeeShare",
                 profile.pagibig_employee_share AS "pagibigEmployeeShare",
                 profile.union_dues AS "unionDues",
+                profile.minimum_wage_region AS "minimumWageRegion",
+                profile.minimum_daily_wage AS "minimumDailyWage",
                 COALESCE(TO_CHAR(shift.start_time,'HH24:MI'),'08:00') AS "startTime",
                 COALESCE(TO_CHAR(shift.end_time,'HH24:MI'),'17:00') AS "endTime",
                 COALESCE(
@@ -99,13 +106,33 @@ payoutRouter.post(
       }
 
       const profile = profileResult.rows[0];
+      const monthlyContributionBase = Number(profile.monthlyContributionBase
+        || (profile.payBasis === 'monthly' ? profile.baseRate : 0));
+      if (!(monthlyContributionBase > 0)) {
+        return response.status(409).json({
+          error:'Set the employee monthly statutory contribution base before calculating payout.'
+        });
+      }
+      if (profile.isMinimumWageEarner
+        && (!(Number(profile.minimumDailyWage) > 0) || !String(profile.minimumWageRegion || '').trim())) {
+        return response.status(409).json({
+          error:'Set the applicable wage region and minimum daily wage before treating this employee as a minimum-wage earner.'
+        });
+      }
       if (!isPayrollPeriodShapeValid({ frequency:profile.payFrequency, periodStart, periodEnd })) {
         return response.status(400).json({
           error:`The selected dates do not match the employee's ${String(profile.payFrequency).replace('_', ' ')} pay frequency.`
         });
       }
 
-      const [entriesResult, componentsResult, holidaysByDate] = await Promise.all([
+      const [
+        entriesResult,
+        componentsResult,
+        holidaysByDate,
+        priorStatutoryResult,
+        yearToDateResult,
+        yearToDateBenefitsResult
+      ] = await Promise.all([
         pool.query(
           `SELECT DISTINCT attendance.entry->>'timestamp' AS timestamp,
                   TO_CHAR(
@@ -130,13 +157,52 @@ payoutRouter.post(
         ),
         pool.query(
           `SELECT component_type AS type, name, amount, calculation,
-                  is_taxable AS "isTaxable"
+                  is_taxable AS "isTaxable", benefit_category AS "benefitCategory"
            FROM employee_payroll_components
            WHERE employee_id=$1 AND is_active=TRUE
            ORDER BY type, name`,
           [employeeId]
         ),
-        holidayOccurrencesByDate({ startDate:periodStart, endDate:periodEnd })
+        holidayOccurrencesByDate({ startDate:periodStart, endDate:periodEnd }),
+        pool.query(
+          `SELECT COALESCE(SUM(item.sss_employee),0)::double precision AS "sssEmployee",
+                  COALESCE(SUM(item.sss_employer),0)::double precision AS "sssEmployer",
+                  COALESCE(SUM(item.sss_ec_employer),0)::double precision AS "sssEcEmployer",
+                  COALESCE(SUM(item.philhealth_employee),0)::double precision AS "philhealthEmployee",
+                  COALESCE(SUM(item.philhealth_employer),0)::double precision AS "philhealthEmployer",
+                  COALESCE(SUM(item.pagibig_employee),0)::double precision AS "pagibigEmployee",
+                  COALESCE(SUM(item.pagibig_employer),0)::double precision AS "pagibigEmployer"
+           FROM payroll_run_items item
+           JOIN payroll_runs run ON run.id=item.run_id
+           WHERE item.employee_id=$1 AND run.status='finalized'
+             AND TO_CHAR(run.pay_date,'YYYY-MM')=SUBSTRING($2,1,7)
+             AND run.pay_date<$2::date`,
+          [employeeId, payDate]
+        ),
+        pool.query(
+          `SELECT COALESCE(SUM(item.taxable_compensation),0)::double precision AS "taxableCompensation",
+                  COALESCE(SUM(item.tax_withheld),0)::double precision AS "taxWithheld",
+                  COALESCE(SUM(item.tax_refund),0)::double precision AS "taxRefund"
+           FROM payroll_run_items item
+           JOIN payroll_runs run ON run.id=item.run_id
+           WHERE item.employee_id=$1 AND run.status='finalized'
+             AND EXTRACT(YEAR FROM run.pay_date)=EXTRACT(YEAR FROM $2::date)
+             AND run.pay_date<$2::date`,
+          [employeeId, payDate]
+        ),
+        pool.query(
+          `SELECT earning->>'benefitCategory' AS category,
+                  COALESCE(SUM((earning->>'value')::numeric),0)::double precision AS amount
+           FROM payroll_run_items item
+           JOIN payroll_runs run ON run.id=item.run_id
+           CROSS JOIN LATERAL JSONB_ARRAY_ELEMENTS(item.calculation->'earnings') earning
+           WHERE item.employee_id=$1 AND run.status='finalized'
+             AND EXTRACT(YEAR FROM run.pay_date)=EXTRACT(YEAR FROM $2::date)
+             AND run.pay_date<$2::date
+             AND COALESCE(earning->>'benefitCategory','')<>''
+           GROUP BY earning->>'benefitCategory'`,
+          [employeeId, payDate]
+        )
       ]);
 
       const entriesByDate = new Map();
@@ -273,8 +339,52 @@ payoutRouter.post(
       const componentValue = (item) => round(item.calculation === 'percentage'
         ? adjustedBase * Number(item.amount) / 100
         : Number(item.amount));
-      const recurringEarnings = componentsResult.rows.filter((item) => item.type === 'earning')
+      const rawRecurringEarnings = componentsResult.rows.filter((item) => item.type === 'earning')
         .map((item) => ({ ...item, value:componentValue(item) }));
+      const yearToDateBenefits = Object.fromEntries(
+        yearToDateBenefitsResult.rows.map((item) => [item.category, Number(item.amount)])
+      );
+      const categorizedBenefits = rawRecurringEarnings.filter((item) =>
+        item.benefitCategory && item.benefitCategory !== 'thirteenth_month');
+      const thirteenthMonthBenefits = rawRecurringEarnings.filter((item) =>
+        item.benefitCategory === 'thirteenth_month');
+      const benefitClassification = classifyBenefits({
+        benefits:categorizedBenefits.map((item) => ({
+          category:item.benefitCategory,
+          amount:item.value,
+          qualifiedDays:item.benefitCategory === 'overtime_meal'
+            ? Math.max(1, scheduledDates.length) : undefined
+        })),
+        yearToDateByCategory:yearToDateBenefits,
+        thirteenthMonthAndOtherBenefits:thirteenthMonthBenefits
+          .reduce((sum, item) => sum + item.value, 0),
+        yearToDateThirteenthAndOther:Number(yearToDateBenefits.thirteenth_month || 0),
+        minimumDailyWage:Number(profile.minimumDailyWage || 0)
+      });
+      let remainingThirteenthNonTaxable = benefitClassification.thirteenthMonthNonTaxable;
+      const recurringEarnings = [
+        ...rawRecurringEarnings.filter((item) => !item.benefitCategory).map((item) => ({
+          ...item,
+          taxableValue:item.isTaxable ? item.value : 0,
+          nonTaxableValue:item.isTaxable ? 0 : item.value
+        })),
+        ...categorizedBenefits.map((item, index) => ({
+          ...item,
+          taxableValue:benefitClassification.details[index].taxable,
+          nonTaxableValue:benefitClassification.details[index].nonTaxable,
+          statutoryLimit:benefitClassification.details[index].limit
+        })),
+        ...thirteenthMonthBenefits.map((item) => {
+          const nonTaxableValue = Math.min(item.value, remainingThirteenthNonTaxable);
+          remainingThirteenthNonTaxable -= nonTaxableValue;
+          return {
+            ...item,
+            taxableValue:round(item.value - nonTaxableValue),
+            nonTaxableValue:round(nonTaxableValue),
+            statutoryLimit:90000
+          };
+        })
+      ];
       const holidayEarnings = attendanceDays.filter((day) => day.holidayPay?.additionalPay > 0)
         .map((day) => ({
           type:'earning',
@@ -298,27 +408,34 @@ payoutRouter.post(
       const earnings = [...recurringEarnings, ...holidayEarnings, ...ordinaryWorkEarnings];
       const deductions = componentsResult.rows.filter((item) => item.type === 'deduction')
         .map((item) => ({ ...item, value:componentValue(item) }));
-      const taxableEarnings = round(earnings.filter((item) => item.isTaxable)
-        .reduce((sum, item) => sum + item.value, 0));
-      const nonTaxableEarnings = round(earnings.filter((item) => !item.isTaxable)
-        .reduce((sum, item) => sum + item.value, 0));
+      const taxableEarnings = round(earnings.reduce((sum, item) => sum
+        + Number(item.taxableValue ?? (item.isTaxable ? item.value : 0)), 0));
+      const nonTaxableEarnings = round(earnings.reduce((sum, item) => sum
+        + Number(item.nonTaxableValue ?? (item.isTaxable ? 0 : item.value)), 0));
       const recurringDeductions = round(deductions.reduce((sum, item) => sum + item.value, 0));
 
-      const monthly = calculateStatutoryContributions(profile.baseRate);
-      const automatic = allocateStatutoryContributions(monthly, {
+      const monthly = calculateStatutoryContributions(monthlyContributionBase, { payDate });
+      const automatic = reconcileMonthlyStatutoryContributions(
+        monthly,
+        priorStatutoryResult.rows[0],
+        {
         frequency:profile.payFrequency,
         payDate,
         schedule:profile.contributionDeductionSchedule
-      });
-      const contributions = profile.autoCalculateContributions && profile.payBasis === 'monthly'
+        }
+      );
+      const contributions = profile.autoCalculateContributions
         ? automatic
         : {
+          ...automatic,
           sssEmployee:Number(profile.sssEmployeeShare),
           philhealthEmployee:Number(profile.philhealthEmployeeShare),
           pagibigEmployee:Number(profile.pagibigEmployeeShare),
           totalEmployee:round(Number(profile.sssEmployeeShare)
             + Number(profile.philhealthEmployeeShare) + Number(profile.pagibigEmployeeShare)),
-          allocation:{ frequency:profile.payFrequency, schedule:'manual', payDate }
+          totalContribution:round(automatic.totalEmployer + Number(profile.sssEmployeeShare)
+            + Number(profile.philhealthEmployeeShare) + Number(profile.pagibigEmployeeShare)),
+          allocation:{ ...automatic.allocation, employeeMethod:'manual' }
         };
 
       const tableFrequency = profile.payFrequency === 'biweekly' ? 'weekly' : profile.payFrequency;
@@ -358,9 +475,20 @@ payoutRouter.post(
         brackets
       });
 
+      const yearToDate = yearToDateResult.rows[0];
+      const yearEndAdjustment = periodEnd.endsWith('-12-31');
+      const annualAdjustment = calculateYearEndAdjustment({
+        yearToDateTaxableCompensation:Number(yearToDate.taxableCompensation),
+        currentTaxableCompensation:taxResult.taxableIncome,
+        yearToDateTaxWithheld:Number(yearToDate.taxWithheld),
+        yearToDateTaxRefund:Number(yearToDate.taxRefund)
+      });
+      const taxWithheld = yearEndAdjustment ? annualAdjustment.taxWithheld : taxResult.tax;
+      const taxRefund = yearEndAdjustment ? annualAdjustment.taxRefund : 0;
+
       const grossPay = round(periodBase + taxableEarnings + nonTaxableEarnings);
       const totalDeductions = round(attendanceDeduction + contributions.totalEmployee
-        + Number(profile.unionDues) + recurringDeductions + taxResult.tax);
+        + Number(profile.unionDues) + recurringDeductions + taxWithheld - taxRefund);
       const netPay = round(grossPay - totalDeductions);
       if (netPay < 0) {
         return response.status(422).json({
@@ -394,9 +522,15 @@ payoutRouter.post(
         contributions,
         unionDues:Number(profile.unionDues),
         tax:{
-          amount:taxResult.tax,
+          amount:taxWithheld,
+          refund:taxRefund,
           taxableIncome:taxResult.taxableIncome,
-          configuration:taxConfiguration.rows[0]
+          configuration:taxConfiguration.rows[0],
+          annualizedTax:annualAdjustment.annualizedTax,
+          yearToDateTaxableCompensation:Number(yearToDate.taxableCompensation),
+          yearToDateNetWithholding:annualAdjustment.priorNetWithholding,
+          yearEndAdjustment,
+          yearEndBalance:annualAdjustment.balance
         },
         grossPay,
         totalDeductions,

@@ -19,6 +19,7 @@ import { organizationRouter } from './routes/organization.js';
 import { payrollRouter } from './routes/payroll.js';
 import { payrollComplianceRouter } from './routes/payroll-compliance.js';
 import { payoutRouter } from './routes/payout.js';
+import { disbursementRouter } from './routes/disbursement.js';
 import { taxRouter } from './routes/tax.js';
 import { calendarRouter } from './routes/calendar.js';
 import { companyRouter } from './routes/company.js';
@@ -117,6 +118,7 @@ app.get('/api/health', async (_request, response) => {
         )
       ) AS employee_shift_assignment_columns,
       EXISTS (SELECT 1 FROM modules WHERE module_key = 'calendar' AND is_active = TRUE) AS calendar_module,
+      EXISTS (SELECT 1 FROM modules WHERE module_key = 'disbursement' AND is_active = TRUE) AS disbursement_module,
       EXISTS (
         SELECT 1 FROM pg_constraint
         WHERE conname='payroll_run_items_compensation_totals_check' AND convalidated=TRUE
@@ -151,13 +153,17 @@ app.get('/api/health', async (_request, response) => {
       [
         'employee_id', 'pay_basis', 'pay_frequency', 'base_rate', 'standard_hours_per_day', 'tax_status',
         'effective_date', 'is_minimum_wage_earner', 'auto_calculate_contributions',
+        'monthly_contribution_base', 'minimum_wage_region', 'minimum_daily_wage',
         'contribution_deduction_schedule', 'employee_classification', 'sss_employee_share',
         'philhealth_employee_share', 'pagibig_employee_share', 'union_dues', 'notes'
       ],
       [
         'run_id', 'employee_id', 'gross_compensation', 'taxable_compensation',
         'non_taxable_compensation', 'sss_employee', 'philhealth_employee', 'pagibig_employee',
-        'union_dues', 'tax_withheld', 'net_pay', 'calculation'
+        'sss_employer', 'sss_ec_employer', 'philhealth_employer', 'pagibig_employer',
+        'union_dues', 'tax_withheld', 'tax_refund', 'net_pay', 'calculation',
+        'disbursement_status', 'disbursement_method', 'disbursement_reference',
+        'disbursement_notes', 'disbursed_at', 'disbursed_by'
       ],
       ['employee_id', 'shift_type', 'start_time', 'end_time', 'work_days']
     ]);
@@ -232,6 +238,7 @@ app.use('/api/organization', organizationRouter);
 app.use('/api/payroll', payrollRouter);
 app.use('/api/payroll', payrollComplianceRouter);
 app.use('/api/payroll', payoutRouter);
+app.use('/api/payroll', disbursementRouter);
 app.use('/api/tax-configurations', taxRouter);
 app.use('/api/calendar', calendarRouter);
 app.use('/api/company', companyRouter);

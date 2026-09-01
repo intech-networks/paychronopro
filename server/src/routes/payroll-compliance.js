@@ -120,7 +120,10 @@ payrollComplianceRouter.post(
       const profileResult = await pool.query(
         `SELECT pay_basis AS "payBasis", pay_frequency AS "payFrequency",
                 base_rate AS "baseRate", tax_status AS "taxStatus",
+                monthly_contribution_base AS "monthlyContributionBase",
                 is_minimum_wage_earner AS "isMinimumWageEarner",
+                minimum_wage_region AS "minimumWageRegion",
+                minimum_daily_wage AS "minimumDailyWage",
                 employee_classification AS "employeeClassification",
                 auto_calculate_contributions AS "autoCalculateContributions",
                 contribution_deduction_schedule AS "contributionDeductionSchedule",
@@ -137,6 +140,12 @@ payrollComplianceRouter.post(
       }
 
       const profile = profileResult.rows[0];
+      if (profile.isMinimumWageEarner
+        && (!(Number(profile.minimumDailyWage) > 0) || !String(profile.minimumWageRegion || '').trim())) {
+        return response.status(409).json({
+          error:'Set the applicable wage region and minimum daily wage before applying minimum-wage tax treatment.'
+        });
+      }
       const suppliedRegular = body.regularCompensation;
       if (profile.payBasis !== 'monthly'
         && (suppliedRegular === undefined || String(suppliedRegular).trim() === '')) {
@@ -174,23 +183,32 @@ payrollComplianceRouter.post(
 
       const monthlyBasicInput = body.monthlyBasicSalary;
       const monthlyBasic = Number(monthlyBasicInput === undefined
-        || String(monthlyBasicInput).trim() === '' ? profile.baseRate : monthlyBasicInput);
-      const monthlyContributions = calculateStatutoryContributions(monthlyBasic);
+        || String(monthlyBasicInput).trim() === ''
+        ? (profile.monthlyContributionBase || profile.baseRate) : monthlyBasicInput);
+      if (!(monthlyBasic > 0)) {
+        return response.status(409).json({
+          error:'Set the employee monthly statutory contribution base before calculating compliance.'
+        });
+      }
+      const monthlyContributions = calculateStatutoryContributions(monthlyBasic, { payDate:date });
       const allocated = allocateStatutoryContributions(monthlyContributions, {
         frequency:profile.payFrequency,
         payDate:date,
         schedule:profile.contributionDeductionSchedule
       });
-      const contributions = profile.autoCalculateContributions && profile.payBasis === 'monthly'
+      const contributions = profile.autoCalculateContributions
         ? allocated
         : {
+          ...allocated,
           sssEmployee:Number(profile.sssEmployeeShare),
           philhealthEmployee:Number(profile.philhealthEmployeeShare),
           pagibigEmployee:Number(profile.pagibigEmployeeShare),
           totalEmployee:Number(profile.sssEmployeeShare)
             + Number(profile.philhealthEmployeeShare)
             + Number(profile.pagibigEmployeeShare),
-          allocation:{ frequency:profile.payFrequency, schedule:'manual', payDate:date }
+          totalContribution:allocated.totalEmployer + Number(profile.sssEmployeeShare)
+            + Number(profile.philhealthEmployeeShare) + Number(profile.pagibigEmployeeShare),
+          allocation:{ ...allocated.allocation, employeeMethod:'manual' }
         };
 
       let regular = profile.payBasis === 'monthly' ? Number(profile.baseRate) : Number(suppliedRegular);
@@ -198,9 +216,9 @@ payrollComplianceRouter.post(
       if (profile.payBasis === 'monthly' && profile.payFrequency === 'weekly') regular = regular * 12 / 52;
       if (profile.payBasis === 'monthly' && profile.payFrequency === 'biweekly') regular = regular * 12 / 26;
 
-      const benefits = classifyBenefits({ ...body, ...parsedBenefits.value });
       const recurringEarningResult = await pool.query(
-        `SELECT amount, calculation, is_taxable AS "isTaxable"
+        `SELECT amount, calculation, is_taxable AS "isTaxable",
+                benefit_category AS "benefitCategory"
          FROM employee_payroll_components
          WHERE employee_id=$1 AND component_type='earning' AND is_active=TRUE`,
         [request.params.employeeId]
@@ -208,9 +226,30 @@ payrollComplianceRouter.post(
       const recurringEarningValue = (earning) => earning.calculation === 'percentage'
         ? regular * Number(earning.amount) / 100
         : Number(earning.amount);
-      const recurringTaxable = recurringEarningResult.rows.filter((earning) => earning.isTaxable)
+      const recurringCategorized = recurringEarningResult.rows.filter((earning) =>
+        earning.benefitCategory && earning.benefitCategory !== 'thirteenth_month');
+      const recurringThirteenth = recurringEarningResult.rows.filter((earning) =>
+        earning.benefitCategory === 'thirteenth_month');
+      const benefits = classifyBenefits({
+        ...body,
+        benefits:[
+          ...parsedBenefits.value.benefits,
+          ...recurringCategorized.map((earning) => ({
+            category:earning.benefitCategory,
+            amount:recurringEarningValue(earning),
+            qualifiedDays:earning.benefitCategory === 'overtime_meal'
+              ? Number(body.qualifiedDays || 1) : undefined
+          }))
+        ],
+        yearToDateByCategory:parsedBenefits.value.yearToDateByCategory,
+        thirteenthMonthAndOtherBenefits:Number(body.thirteenthMonthAndOtherBenefits || 0)
+          + recurringThirteenth.reduce((sum, earning) => sum + recurringEarningValue(earning), 0)
+      });
+      const recurringTaxable = recurringEarningResult.rows.filter((earning) =>
+        !earning.benefitCategory && earning.isTaxable)
         .reduce((sum, earning) => sum + recurringEarningValue(earning), 0);
-      const recurringNonTaxable = recurringEarningResult.rows.filter((earning) => !earning.isTaxable)
+      const recurringNonTaxable = recurringEarningResult.rows.filter((earning) =>
+        !earning.benefitCategory && !earning.isTaxable)
         .reduce((sum, earning) => sum + recurringEarningValue(earning), 0);
       const nonTaxable = Number(body.otherNonTaxableCompensation || 0)
         + benefits.totalNonTaxable + recurringNonTaxable;
@@ -312,9 +351,10 @@ payrollComplianceRouter.post(
         await client.query(
           `INSERT INTO payroll_run_items(
              run_id, employee_id, gross_compensation, taxable_compensation,
-             non_taxable_compensation, sss_employee, philhealth_employee,
-             pagibig_employee, union_dues, tax_withheld, net_pay, calculation
-           ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+             non_taxable_compensation, sss_employee, sss_employer, sss_ec_employer,
+             philhealth_employee, philhealth_employer, pagibig_employee, pagibig_employer,
+             union_dues, tax_withheld, tax_refund, net_pay, calculation
+           ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
           [
             run.rows[0].id,
             item.employeeId,
@@ -322,10 +362,15 @@ payrollComplianceRouter.post(
             item.taxableIncome,
             item.nonTaxableCompensation,
             item.sssEmployee,
+            item.sssEmployer,
+            item.sssEcEmployer,
             item.philhealthEmployee,
+            item.philhealthEmployer,
             item.pagibigEmployee,
+            item.pagibigEmployer,
             item.unionDues,
             item.tax,
+            item.taxRefund,
             item.netPay,
             JSON.stringify(item.calculation)
           ]
@@ -403,6 +448,22 @@ payrollComplianceRouter.put(
         }
       }
 
+      if (nextStatus === 'void' && current.rows[0].status === 'finalized') {
+        const disbursed = await client.query(
+          `SELECT id FROM payroll_run_items
+           WHERE run_id=$1 AND disbursement_status IN ('processing','paid')
+           LIMIT 1`,
+          [request.params.runId]
+        );
+        if (disbursed.rowCount) {
+          await client.query('ROLLBACK');
+          transactionStarted = false;
+          return response.status(409).json({
+            error:'A payroll run with processing or paid disbursements cannot be voided.'
+          });
+        }
+      }
+
       const updated = await client.query(
         'UPDATE payroll_runs SET status=$2 WHERE id=$1 RETURNING id, status',
         [request.params.runId, nextStatus]
@@ -420,6 +481,36 @@ payrollComplianceRouter.put(
 );
 
 payrollComplianceRouter.get(
+  '/reports/statutory-contributions',
+  ...requirePermission('payroll_setup', 'view'),
+  async (request, response, next) => {
+    try {
+      const month = String(request.query.month || '');
+      if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+        return response.status(400).json({ error:'Month must use YYYY-MM.' });
+      }
+      const result = await pool.query(
+        `SELECT COUNT(DISTINCT item.employee_id)::integer AS "employeeCount",
+                COALESCE(SUM(item.sss_employee),0) AS "sssEmployee",
+                COALESCE(SUM(item.sss_employer),0) AS "sssEmployer",
+                COALESCE(SUM(item.sss_ec_employer),0) AS "sssEcEmployer",
+                COALESCE(SUM(item.philhealth_employee),0) AS "philhealthEmployee",
+                COALESCE(SUM(item.philhealth_employer),0) AS "philhealthEmployer",
+                COALESCE(SUM(item.pagibig_employee),0) AS "pagibigEmployee",
+                COALESCE(SUM(item.pagibig_employer),0) AS "pagibigEmployer"
+         FROM payroll_run_items item
+         JOIN payroll_runs run ON run.id=item.run_id
+         WHERE run.status='finalized' AND TO_CHAR(run.pay_date,'YYYY-MM')=$1`,
+        [month]
+      );
+      return response.json({ month, ...result.rows[0] });
+    } catch (error) {
+      return next(error);
+    }
+  }
+);
+
+payrollComplianceRouter.get(
   '/reports/1601c',
   ...requirePermission('payroll_setup', 'view'),
   async (request, response, next) => {
@@ -432,7 +523,9 @@ payrollComplianceRouter.get(
         `SELECT COALESCE(SUM(gross_compensation),0) AS "totalCompensation",
                 COALESCE(SUM(non_taxable_compensation),0) AS "nonTaxableCompensation",
                 COALESCE(SUM(taxable_compensation),0) AS "taxableCompensation",
-                COALESCE(SUM(tax_withheld),0) AS "taxWithheld"
+                COALESCE(SUM(tax_withheld),0) AS "taxWithheld",
+                COALESCE(SUM(tax_refund),0) AS "taxRefund",
+                COALESCE(SUM(tax_withheld-tax_refund),0) AS "netTaxWithheld"
          FROM payroll_run_items item
          JOIN payroll_runs run ON run.id=item.run_id
          WHERE run.status='finalized' AND TO_CHAR(run.pay_date,'YYYY-MM')=$1`,
@@ -461,7 +554,9 @@ payrollComplianceRouter.get(
                 COALESCE(SUM(item.gross_compensation),0) AS "grossCompensation",
                 COALESCE(SUM(item.non_taxable_compensation),0) AS "nonTaxableCompensation",
                 COALESCE(SUM(item.taxable_compensation),0) AS "taxableCompensation",
-                COALESCE(SUM(item.tax_withheld),0) AS "taxWithheld"
+                COALESCE(SUM(item.tax_withheld),0) AS "taxWithheld",
+                COALESCE(SUM(item.tax_refund),0) AS "taxRefund",
+                COALESCE(SUM(item.tax_withheld-item.tax_refund),0) AS "netTaxWithheld"
          FROM employee_profiles employee
          LEFT JOIN (
            payroll_run_items item

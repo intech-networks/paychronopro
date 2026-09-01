@@ -69,6 +69,26 @@ test('accepts a payout preview with attendance and recurring deductions', () => 
   assert.equal(result.value.items[0].nonTaxableCompensation, 100);
 });
 
+test('accepts a signed-style year-end tax refund that increases take-home pay', () => {
+  const result = validatePayrollRunInput({
+    periodStart:'2026-12-16',
+    periodEnd:'2026-12-31',
+    payDate:'2026-12-31',
+    items:[{
+      employeeId:'12',
+      grossPay:1000,
+      taxableIncome:1000,
+      contributions:{ sssEmployee:0, philhealthEmployee:0, pagibigEmployee:0 },
+      unionDues:0,
+      tax:{ amount:0, refund:100 },
+      totalDeductions:-100,
+      netPay:1100
+    }]
+  });
+  assert.equal(result.error, undefined);
+  assert.equal(result.value.items[0].taxRefund, 100);
+});
+
 test('rejects malformed dates, duplicate employees, and invalid money', () => {
   assert.match(validatePayrollRunInput({
     periodStart:'',

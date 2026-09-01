@@ -28,8 +28,9 @@ test('defines every parent and child module relationship', () => {
     shift_change: 'time_tracking',
     scheduler: 'utilities',
     device_users: 'utilities',
-    payroll_setup: 'payroll'
-    ,payout_view: 'payroll'
+    payroll_setup: 'payroll',
+    payout_view: 'payroll',
+    disbursement: 'payroll'
   });
 });
 

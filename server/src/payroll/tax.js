@@ -11,3 +11,23 @@ export function calculateAnnualizedTax(taxableCompensation){return calculateProg
 
 export function calculateCumulativeAverageWithholding({yearToDateTaxable=0,currentTaxable=0,payrollPeriods=1,taxAlreadyWithheld=0,brackets=[]}){const average=(Number(yearToDateTaxable)+Number(currentTaxable))/Number(payrollPeriods);const cumulativeTax=calculateProgressiveTax(average,0,brackets).tax*Number(payrollPeriods);return Math.max(0,Math.round((cumulativeTax-Number(taxAlreadyWithheld))*100)/100);}
 export function calculateFringeBenefitTax(monetaryValue,rate=.35){const divisor=1-rate;return Math.round((Number(monetaryValue||0)/divisor*rate)*100)/100;}
+
+export function calculateYearEndAdjustment({
+  yearToDateTaxableCompensation = 0,
+  currentTaxableCompensation = 0,
+  yearToDateTaxWithheld = 0,
+  yearToDateTaxRefund = 0
+} = {}) {
+  const annualizedTax = calculateAnnualizedTax(
+    Number(yearToDateTaxableCompensation) + Number(currentTaxableCompensation)
+  );
+  const priorNetWithholding = Number(yearToDateTaxWithheld) - Number(yearToDateTaxRefund);
+  const balance = Math.round((annualizedTax - priorNetWithholding) * 100) / 100;
+  return {
+    annualizedTax,
+    priorNetWithholding,
+    balance,
+    taxWithheld:Math.max(0, balance),
+    taxRefund:Math.max(0, -balance)
+  };
+}

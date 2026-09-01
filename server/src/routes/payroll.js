@@ -17,6 +17,11 @@ const payFrequencies = new Set(['weekly','biweekly','semi_monthly','monthly']);
 const taxStatuses = new Set(['taxable','exempt']);
 const calculations = new Set(['fixed','percentage']);
 const contributionSchedules = new Set(['split_evenly','first_cutoff','second_cutoff']);
+const benefitCategories = new Set([
+  '', 'medical_dependents', 'rice', 'uniform', 'medical_assistance', 'laundry',
+  'achievement_award', 'christmas_gifts', 'cba_productivity', 'overtime_meal',
+  'thirteenth_month'
+]);
 const maximumMoneyValue = 999_999_999_999.99;
 
 function validMoney(value) {
@@ -63,8 +68,8 @@ payrollRouter.get('/employees/:employeeId', ...requirePermission('payroll_setup'
          WHERE employee.id=$1`,
         [request.params.employeeId]
       ),
-      pool.query(`SELECT pay_basis AS "payBasis", pay_frequency AS "payFrequency", base_rate AS "baseRate", standard_hours_per_day AS "standardHoursPerDay", tax_status AS "taxStatus", effective_date AS "effectiveDate", is_minimum_wage_earner AS "isMinimumWageEarner", auto_calculate_contributions AS "autoCalculateContributions", contribution_deduction_schedule AS "contributionDeductionSchedule", employee_classification AS "employeeClassification", sss_employee_share AS "sssEmployeeShare", philhealth_employee_share AS "philhealthEmployeeShare", pagibig_employee_share AS "pagibigEmployeeShare", union_dues AS "unionDues", notes FROM employee_payroll_profiles WHERE employee_id=$1`,[request.params.employeeId]),
-      pool.query(`SELECT id, component_type AS "type", name, amount, calculation, is_taxable AS "isTaxable", is_active AS "isActive" FROM employee_payroll_components WHERE employee_id=$1 ORDER BY component_type,name,id`,[request.params.employeeId])
+      pool.query(`SELECT pay_basis AS "payBasis", pay_frequency AS "payFrequency", base_rate AS "baseRate", monthly_contribution_base AS "monthlyContributionBase", standard_hours_per_day AS "standardHoursPerDay", tax_status AS "taxStatus", effective_date AS "effectiveDate", is_minimum_wage_earner AS "isMinimumWageEarner", minimum_wage_region AS "minimumWageRegion", minimum_daily_wage AS "minimumDailyWage", auto_calculate_contributions AS "autoCalculateContributions", contribution_deduction_schedule AS "contributionDeductionSchedule", employee_classification AS "employeeClassification", sss_employee_share AS "sssEmployeeShare", philhealth_employee_share AS "philhealthEmployeeShare", pagibig_employee_share AS "pagibigEmployeeShare", union_dues AS "unionDues", notes FROM employee_payroll_profiles WHERE employee_id=$1`,[request.params.employeeId]),
+      pool.query(`SELECT id, component_type AS "type", name, amount, calculation, is_taxable AS "isTaxable", benefit_category AS "benefitCategory", is_active AS "isActive" FROM employee_payroll_components WHERE employee_id=$1 ORDER BY component_type,name,id`,[request.params.employeeId])
     ]);
     if(!employee.rowCount)return response.status(404).json({error:'Employee not found.'});
     return response.json({employee:employee.rows[0],profile:profile.rows[0]||null,components:components.rows});
@@ -76,15 +81,18 @@ payrollRouter.put('/employees/:employeeId', ...requirePermission('payroll_setup'
   try {
     const employeeId=String(request.params.employeeId); const body=request.body||{};
     const baseRate=Number(body.baseRate), hours=Number(body.standardHoursPerDay); const components=Array.isArray(body.components)?body.components:[]; const contributions=['sssEmployeeShare','philhealthEmployeeShare','pagibigEmployeeShare','unionDues'].map(key=>Number(body[key]||0));
+    const monthlyContributionBase=Number(body.monthlyContributionBase || (body.payBasis==='monthly' ? baseRate : 0));
+    const minimumDailyWage=body.minimumDailyWage==null||String(body.minimumDailyWage).trim()===''?null:Number(body.minimumDailyWage);
+    const minimumWageRegion=String(body.minimumWageRegion||'').trim();
     const effectiveDate=String(body.effectiveDate||'');
     const notes=String(body.notes||'').trim();
-    if(!isPositiveInteger(employeeId)||!payBases.has(body.payBasis)||!payFrequencies.has(body.payFrequency)||!taxStatuses.has(body.taxStatus)||!contributionSchedules.has(body.contributionDeductionSchedule||'split_evenly')||!validMoney(baseRate)||!Number.isFinite(hours)||hours<=0||hours>24||Math.abs(hours*100-Math.round(hours*100))>1e-7||(effectiveDate&&!isIsoDate(effectiveDate))||notes.length>5000||contributions.some(value=>!validMoney(value)))return response.status(400).json({error:'Enter valid payroll settings.'});
-    if(components.length>200||components.some((item)=>!['earning','deduction'].includes(item.type)||!String(item.name||'').trim()||String(item.name).trim().length>100||!calculations.has(item.calculation)||!validMoney(Number(item.amount))||(item.calculation==='percentage'&&Number(item.amount)>100)))return response.status(400).json({error:'Enter valid earnings and deductions.'});
+    if(!isPositiveInteger(employeeId)||!payBases.has(body.payBasis)||!payFrequencies.has(body.payFrequency)||!taxStatuses.has(body.taxStatus)||!contributionSchedules.has(body.contributionDeductionSchedule||'split_evenly')||!validMoney(baseRate)||!validMoney(monthlyContributionBase)||monthlyContributionBase<=0||!Number.isFinite(hours)||hours<=0||hours>24||Math.abs(hours*100-Math.round(hours*100))>1e-7||(effectiveDate&&!isIsoDate(effectiveDate))||notes.length>5000||contributions.some(value=>!validMoney(value))||(body.isMinimumWageEarner&&(!minimumWageRegion||minimumDailyWage==null||!validMoney(minimumDailyWage)||minimumDailyWage<=0)))return response.status(400).json({error:'Enter valid payroll settings, monthly contribution base, and minimum-wage details when applicable.'});
+    if(components.length>200||components.some((item)=>!['earning','deduction'].includes(item.type)||!String(item.name||'').trim()||String(item.name).trim().length>100||!calculations.has(item.calculation)||!validMoney(Number(item.amount))||(item.calculation==='percentage'&&Number(item.amount)>100)||!benefitCategories.has(String(item.benefitCategory||''))||(item.type!=='earning'&&item.benefitCategory)))return response.status(400).json({error:'Enter valid earnings, deductions, and statutory benefit categories.'});
     await client.query('BEGIN');
-    const saved=await client.query(`INSERT INTO employee_payroll_profiles (employee_id,pay_basis,pay_frequency,base_rate,standard_hours_per_day,tax_status,effective_date,is_minimum_wage_earner,auto_calculate_contributions,contribution_deduction_schedule,sss_employee_share,philhealth_employee_share,pagibig_employee_share,union_dues,notes,updated_by) SELECT id,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16 FROM employee_profiles WHERE id=$1 ON CONFLICT(employee_id) DO UPDATE SET pay_basis=EXCLUDED.pay_basis,pay_frequency=EXCLUDED.pay_frequency,base_rate=EXCLUDED.base_rate,standard_hours_per_day=EXCLUDED.standard_hours_per_day,tax_status=EXCLUDED.tax_status,effective_date=EXCLUDED.effective_date,is_minimum_wage_earner=EXCLUDED.is_minimum_wage_earner,auto_calculate_contributions=EXCLUDED.auto_calculate_contributions,contribution_deduction_schedule=EXCLUDED.contribution_deduction_schedule,sss_employee_share=EXCLUDED.sss_employee_share,philhealth_employee_share=EXCLUDED.philhealth_employee_share,pagibig_employee_share=EXCLUDED.pagibig_employee_share,union_dues=EXCLUDED.union_dues,notes=EXCLUDED.notes,updated_by=EXCLUDED.updated_by,updated_at=NOW() RETURNING employee_id`,[employeeId,body.payBasis,body.payFrequency,baseRate,hours,body.taxStatus,effectiveDate||null,Boolean(body.isMinimumWageEarner),body.autoCalculateContributions!==false,body.contributionDeductionSchedule||'split_evenly',...contributions,notes,request.user.id]);
+    const saved=await client.query(`INSERT INTO employee_payroll_profiles (employee_id,pay_basis,pay_frequency,base_rate,monthly_contribution_base,standard_hours_per_day,tax_status,effective_date,is_minimum_wage_earner,minimum_wage_region,minimum_daily_wage,auto_calculate_contributions,contribution_deduction_schedule,sss_employee_share,philhealth_employee_share,pagibig_employee_share,union_dues,notes,updated_by) SELECT id,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19 FROM employee_profiles WHERE id=$1 ON CONFLICT(employee_id) DO UPDATE SET pay_basis=EXCLUDED.pay_basis,pay_frequency=EXCLUDED.pay_frequency,base_rate=EXCLUDED.base_rate,monthly_contribution_base=EXCLUDED.monthly_contribution_base,standard_hours_per_day=EXCLUDED.standard_hours_per_day,tax_status=EXCLUDED.tax_status,effective_date=EXCLUDED.effective_date,is_minimum_wage_earner=EXCLUDED.is_minimum_wage_earner,minimum_wage_region=EXCLUDED.minimum_wage_region,minimum_daily_wage=EXCLUDED.minimum_daily_wage,auto_calculate_contributions=EXCLUDED.auto_calculate_contributions,contribution_deduction_schedule=EXCLUDED.contribution_deduction_schedule,sss_employee_share=EXCLUDED.sss_employee_share,philhealth_employee_share=EXCLUDED.philhealth_employee_share,pagibig_employee_share=EXCLUDED.pagibig_employee_share,union_dues=EXCLUDED.union_dues,notes=EXCLUDED.notes,updated_by=EXCLUDED.updated_by,updated_at=NOW() RETURNING employee_id`,[employeeId,body.payBasis,body.payFrequency,baseRate,monthlyContributionBase,hours,body.taxStatus,effectiveDate||null,Boolean(body.isMinimumWageEarner),minimumWageRegion||null,minimumDailyWage,body.autoCalculateContributions!==false,body.contributionDeductionSchedule||'split_evenly',...contributions,notes,request.user.id]);
     if(!saved.rowCount){await client.query('ROLLBACK');return response.status(404).json({error:'Employee not found.'});}
     await client.query('DELETE FROM employee_payroll_components WHERE employee_id=$1',[employeeId]);
-    for(const item of components)await client.query(`INSERT INTO employee_payroll_components(employee_id,component_type,name,amount,calculation,is_taxable,is_active) VALUES($1,$2,$3,$4,$5,$6,$7)`,[employeeId,item.type,String(item.name).trim(),Number(item.amount),item.calculation,Boolean(item.isTaxable),item.isActive!==false]);
+    for(const item of components)await client.query(`INSERT INTO employee_payroll_components(employee_id,component_type,name,amount,calculation,is_taxable,benefit_category,is_active) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`,[employeeId,item.type,String(item.name).trim(),Number(item.amount),item.calculation,Boolean(item.isTaxable),String(item.benefitCategory||'')||null,item.isActive!==false]);
     await client.query('COMMIT'); return response.json({message:'Payroll setup saved.'});
   } catch(error){await client.query('ROLLBACK');return next(error);} finally{client.release();}
 });
@@ -100,7 +108,9 @@ payrollRouter.post('/employees/:employeeId/tax-preview', ...requirePermission('p
     }
     const profileResult = await pool.query(
       `SELECT pay_basis AS "payBasis", pay_frequency AS "payFrequency", base_rate AS "baseRate",
+              monthly_contribution_base AS "monthlyContributionBase",
               tax_status AS "taxStatus", is_minimum_wage_earner AS "isMinimumWageEarner",
+              minimum_wage_region AS "minimumWageRegion", minimum_daily_wage AS "minimumDailyWage",
               auto_calculate_contributions AS "autoCalculateContributions",
               contribution_deduction_schedule AS "contributionDeductionSchedule",
               sss_employee_share AS "sssEmployeeShare", philhealth_employee_share AS "philhealthEmployeeShare",
@@ -110,6 +120,19 @@ payrollRouter.post('/employees/:employeeId/tax-preview', ...requirePermission('p
     );
     if (!profileResult.rowCount) return response.status(404).json({ error:'Save the employee payroll setup first.' });
     const profile = profileResult.rows[0];
+    const monthlyContributionBase = Number(profile.monthlyContributionBase
+      || (profile.payBasis === 'monthly' ? profile.baseRate : 0));
+    if (!(monthlyContributionBase > 0)) {
+      return response.status(409).json({
+        error:'Set the employee monthly statutory contribution base before calculating withholding.'
+      });
+    }
+    if (profile.isMinimumWageEarner
+      && (!(Number(profile.minimumDailyWage) > 0) || !String(profile.minimumWageRegion || '').trim())) {
+      return response.status(409).json({
+        error:'Set the applicable wage region and minimum daily wage before applying minimum-wage tax treatment.'
+      });
+    }
     const suppliedRegular = request.body?.regularCompensation;
     if (profile.payBasis !== 'monthly'
       && (suppliedRegular === undefined || String(suppliedRegular).trim() === '')) {
@@ -154,20 +177,23 @@ payrollRouter.post('/employees/:employeeId/tax-preview', ...requirePermission('p
     const nonTaxable = earnings.rows.filter((item) => !item.isTaxable).reduce((sum, item) =>
       sum + (item.calculation === 'percentage' ? regular * Number(item.amount) / 100 : Number(item.amount)), 0)
       + Number(request.body?.otherNonTaxableCompensation || 0);
-    const monthlyContributions = calculateStatutoryContributions(profile.baseRate);
+    const monthlyContributions = calculateStatutoryContributions(monthlyContributionBase, { payDate:date });
     const allocated = allocateStatutoryContributions(monthlyContributions, {
       frequency:profile.payFrequency,
       payDate:date,
       schedule:profile.contributionDeductionSchedule
     });
-    const contributions = profile.autoCalculateContributions && profile.payBasis === 'monthly'
+    const contributions = profile.autoCalculateContributions
       ? allocated
       : {
+        ...allocated,
         sssEmployee:Number(profile.sssEmployeeShare),
         philhealthEmployee:Number(profile.philhealthEmployeeShare),
         pagibigEmployee:Number(profile.pagibigEmployeeShare),
         totalEmployee:Number(profile.sssEmployeeShare) + Number(profile.philhealthEmployeeShare) + Number(profile.pagibigEmployeeShare),
-        allocation:{ frequency:profile.payFrequency, schedule:'manual', payDate:date }
+        totalContribution:allocated.totalEmployer + Number(profile.sssEmployeeShare)
+          + Number(profile.philhealthEmployeeShare) + Number(profile.pagibigEmployeeShare),
+        allocation:{ ...allocated.allocation, employeeMethod:'manual' }
       };
     const mandatory = contributions.totalEmployee + Number(profile.unionDues);
     const result = calculatePhilippineWithholding({

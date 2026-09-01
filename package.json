@@ -10,6 +10,7 @@
     "start": "npm run start -w server",
     "db:migrate": "npm run db:migrate -w server",
     "db:audit": "npm run db:audit -w server",
+    "seed:time-entries:august-2026": "npm run seed:time-entries:august-2026 -w server",
     "smoke:payroll": "npm run smoke:payroll -w server",
     "test": "npm run test -w server",
     "check": "npm run check -w server && npm test && npm run build"
