@@ -9,8 +9,12 @@ import './payout.css';
 import './calendar.css';
 import './calendar-interactions.css';
 import './company-profile.css';
+import './site-settings.css';
 import { CalendarModule, UpcomingCalendarCard } from './CalendarModule.jsx';
 import { CompanyProfile } from './CompanyProfile.jsx';
+import BrandName from './BrandName.jsx';
+import { SiteSettings, defaultSiteSettings } from './SiteSettings.jsx';
+import { applySiteTheme } from './theme.js';
 
 const DeviceUsersModuleContext = createContext(false);
 const administratorHiddenModuleKeys = new Set(['leave_application', 'overtime_request', 'shift_change']);
@@ -22,7 +26,7 @@ const leaveBalanceFields = [
 const leaveTypeLabels = { vacation:'Vacation Leave', sick:'Sick Leave', emergency:'Emergency Leave' };
 
 const parentModuleByChild = {
-  company:'setup', organization:'setup', tax_configuration:'payroll',
+  company:'setup', site_settings:'setup', organization:'setup', tax_configuration:'payroll',
   workforce:'workforce_module', leave_management:'setup', roles:'setup',
   shift_management:'setup', time_entries:'time_tracking', exemption_report:'time_tracking', requests:'time_tracking', leave_application:'time_tracking', overtime_request:'time_tracking', shift_change:'time_tracking',
   scheduler:'utilities', device_users:'utilities', payroll_setup:'payroll', payroll_tax:'payroll', payroll_runs:'payroll', payout_view:'payroll', disbursement:'payroll'
@@ -30,8 +34,8 @@ const parentModuleByChild = {
 
 function effectiveModulePermission(user, moduleKey) {
   const permission = user.permissions.find((item) => item.moduleKey === moduleKey);
-  if (user.role === 'Administrator' && ['setup', 'company', 'organization', 'tax_configuration'].includes(moduleKey) && !permission) {
-    return { moduleKey, moduleName:moduleKey === 'setup' ? 'Setup' : moduleKey === 'company' ? 'Company' : moduleKey === 'organization' ? 'Organization' : 'Tax', create:true, view:true, update:true, delete:true };
+  if (user.role === 'Administrator' && ['setup', 'company', 'site_settings', 'organization', 'tax_configuration'].includes(moduleKey) && !permission) {
+    return { moduleKey, moduleName:moduleKey === 'setup' ? 'Setup' : moduleKey === 'company' ? 'Company' : moduleKey === 'site_settings' ? 'Site Settings' : moduleKey === 'organization' ? 'Organization' : 'Tax', create:true, view:true, update:true, delete:true };
   }
   if (user.role === 'Administrator' && administratorHiddenModuleKeys.has(moduleKey)) {
     return { ...permission, create:false, view:false, update:false, delete:false };
@@ -74,16 +78,76 @@ function NotificationModal() {
   return <div className="notification-modal" role="dialog" aria-modal="true" aria-labelledby="notification-modal-title"><button className="notification-modal-scrim" type="button" onClick={() => close(false)} aria-label="Close notification" /><div className={`notification-modal-card ${modal.type}`}><i aria-hidden="true">{modal.type==='notification'?'✓':modal.type==='confirm'?'?':'!'}</i><div><span>{modal.type==='notification'?'Notification':modal.type==='confirm'?'Confirmation':'Alert'}</span><h2 id="notification-modal-title">{modal.title}</h2><p>{modal.message}</p></div><div className="notification-modal-actions">{modal.type==='confirm'&&<button type="button" onClick={()=>close(false)}>Cancel</button>}<button className="primary-action" type="button" autoFocus onClick={()=>close(true)}>{modal.type==='confirm'?'Confirm':'OK'}</button></div></div></div>;
 }
 
-function Logo() {
-  return <a className="wordmark" href="/" aria-label="PayTimePro home"><span>PayTime</span><strong>Pro</strong></a>;
+function Logo({ branding = defaultSiteSettings }) {
+  const siteName = branding?.siteName || defaultSiteSettings.siteName;
+  const textLogo = siteName === 'PayTimePro' ? <><span>PayTime</span><strong>Pro</strong></> : <BrandName siteName={siteName} />;
+  return <a className="wordmark" href="/" aria-label={`${siteName} home`}>{branding?.logoUrl ? <img className="wordmark-logo" src={branding.logoUrl} alt="" /> : textLogo}</a>;
+}
+
+const themeModeLabels = { light:'Light', dark:'Dark' };
+const themeModeIcons = { light:'☼', dark:'☾' };
+
+function ThemeToggle({ mode = 'light', onChange }) {
+  const currentMode = mode === 'dark' ? 'dark' : 'light';
+  const nextMode = currentMode === 'dark' ? 'light' : 'dark';
+  const currentLabel = themeModeLabels[currentMode];
+  const nextLabel = themeModeLabels[nextMode];
+  return <button className="theme-toggle" type="button" onClick={() => onChange?.(nextMode)} aria-label={`${currentLabel} mode. Switch to ${nextLabel} mode`} title={`${currentLabel} mode · click for ${nextLabel}`}><span aria-hidden="true">{themeModeIcons[currentMode]}</span><b>{currentLabel}</b></button>;
 }
 
 export default function App() {
-  const page = window.location.pathname === '/dashboard' ? <Dashboard /> : window.location.pathname === '/logout' ? <LogoutConfirmation /> : <Login />;
+  const [siteSettings, setSiteSettings] = useState(defaultSiteSettings);
+  const [themeMode, setThemeMode] = useState(() => {
+    try {
+      const stored = window.localStorage.getItem('paytimepro.theme');
+      if (stored === 'light' || stored === 'dark') return stored;
+    } catch {
+    }
+    return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  });
+  const resolvedTheme = themeMode;
+
+  useEffect(() => {
+    const root = document.documentElement;
+    root.dataset.theme = resolvedTheme;
+    root.style.colorScheme = resolvedTheme;
+    try { window.localStorage.setItem('paytimepro.theme', themeMode); } catch {}
+  }, [resolvedTheme, themeMode]);
+
+  useEffect(() => {
+    fetch('/api/site-settings/public', { cache: 'no-store' })
+      .then((response) => response.ok ? response.json() : null)
+      .then((data) => data?.settings && setSiteSettings((current) => ({ ...current, ...data.settings })))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => applySiteTheme(siteSettings, defaultSiteSettings), [siteSettings, resolvedTheme]);
+
+  useEffect(() => {
+    document.title = siteSettings.siteName || defaultSiteSettings.siteName;
+  }, [siteSettings.siteName]);
+
+  useEffect(() => {
+    const existing = document.querySelector('link[data-site-favicon]');
+    if (!siteSettings.faviconUrl) {
+      existing?.remove();
+      return undefined;
+    }
+    const favicon = existing || document.createElement('link');
+    favicon.rel = 'icon';
+    favicon.dataset.siteFavicon = 'true';
+    favicon.href = siteSettings.faviconUrl;
+    if (!existing) document.head.appendChild(favicon);
+    return undefined;
+  }, [siteSettings.faviconUrl]);
+
+  const page = window.location.pathname === '/dashboard'
+    ? <Dashboard siteSettings={siteSettings} onSiteSettingsChange={setSiteSettings} themeMode={themeMode} onThemeModeChange={setThemeMode} />
+    : window.location.pathname === '/logout' ? <LogoutConfirmation branding={siteSettings} themeMode={themeMode} onThemeModeChange={setThemeMode} /> : <Login branding={siteSettings} themeMode={themeMode} onThemeModeChange={setThemeMode} />;
   return <>{page}<NotificationModal /></>;
 }
 
-function Login() {
+function Login({ branding = defaultSiteSettings, themeMode, onThemeModeChange }) {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useModalMessage('error');
   const [submitting, setSubmitting] = useState(false);
@@ -122,7 +186,7 @@ function Login() {
 
   return (
     <div className="login-page">
-      <header className="site-header"><Logo /></header>
+      <header className="site-header"><div className="site-header-inner"><Logo branding={branding} /><ThemeToggle mode={themeMode} onChange={onThemeModeChange} /></div></header>
       <main className="login-main">
         <section className="login-panel" aria-labelledby="login-title">
           <div className="panel-copy"><span className="eyebrow">Welcome back</span><h1 id="login-title">Sign in to your account</h1><p>Enter your details to access your team, timesheets, and payroll.</p></div>
@@ -137,15 +201,15 @@ function Login() {
             <label className="remember"><input type="checkbox" name="remember" /><span>Keep me signed in</span></label>
             <button className="submit-button" type="submit" disabled={submitting}>{submitting ? 'Signing in…' : 'Sign in'} <span>→</span></button>
           </form>
-          <p className="support">Need access? <a href="mailto:hello@paytimepro.com">Contact your administrator</a></p>
+          <p className="support">Need access? <a href={`mailto:${branding.supportEmail || 'hello@paytimepro.com'}`}>Contact your administrator</a></p>
         </section>
       </main>
-      <footer><span>© 2026 PayTimePro</span><span>Secure workforce access</span></footer>
+      <footer><span>© 2026 {branding.siteName}</span><span>{branding.footerText}</span></footer>
     </div>
   );
 }
 
-function Dashboard() {
+function Dashboard({ siteSettings = defaultSiteSettings, onSiteSettingsChange, themeMode, onThemeModeChange }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeModule, setActiveModule] = useState('overview');
@@ -183,6 +247,13 @@ function Dashboard() {
   }
 
   useEffect(() => {
+    fetch('/api/site-settings', { cache: 'no-store' })
+      .then((response) => response.ok ? response.json() : null)
+      .then((data) => data?.settings && onSiteSettingsChange?.(data.settings))
+      .catch(() => {});
+  }, [onSiteSettingsChange]);
+
+  useEffect(() => {
     fetch('/api/auth/me')
       .then(async (response) => {
         if (!response.ok) throw new Error('unauthorized');
@@ -193,9 +264,9 @@ function Dashboard() {
         const visibleModules = data.user.permissions.filter((permission) => permission.view && !(data.user.role === 'Administrator' && administratorHiddenModuleKeys.has(permission.moduleKey))).map((permission) => permission.moduleKey);
         if (visibleModules.includes('payroll_setup')) visibleModules.push('payroll_tax');
         if (visibleModules.includes('payroll_setup') && visibleModules.includes('payout_view')) visibleModules.push('payroll_runs');
-        if (data.user.role === 'Administrator') visibleModules.push('setup', 'company', 'organization');
-        const parentByChild = { company:'setup', organization:'setup', shift_management:'setup', leave_management:'setup', roles:'setup', tax_configuration:'payroll', workforce:'workforce_module', time_entries:'time_tracking', exemption_report:'time_tracking', requests:'time_tracking', leave_application:'time_tracking', overtime_request:'time_tracking', shift_change:'time_tracking', scheduler:'utilities', device_users:'utilities', payroll_setup:'payroll', payroll_tax:'payroll', payroll_runs:'payroll', payout_view:'payroll', disbursement:'payroll' };
-        const setupVisible = visibleModules.includes('setup') && ['company', 'organization', 'shift_management', 'leave_management', 'roles'].some((moduleKey) => visibleModules.includes(moduleKey));
+        if (data.user.role === 'Administrator') visibleModules.push('setup', 'company', 'site_settings', 'organization');
+        const parentByChild = { company:'setup', site_settings:'setup', organization:'setup', shift_management:'setup', leave_management:'setup', roles:'setup', tax_configuration:'payroll', workforce:'workforce_module', time_entries:'time_tracking', exemption_report:'time_tracking', requests:'time_tracking', leave_application:'time_tracking', overtime_request:'time_tracking', shift_change:'time_tracking', scheduler:'utilities', device_users:'utilities', payroll_setup:'payroll', payroll_tax:'payroll', payroll_runs:'payroll', payout_view:'payroll', disbursement:'payroll' };
+        const setupVisible = visibleModules.includes('setup') && ['company', 'site_settings', 'organization', 'shift_management', 'leave_management', 'roles'].some((moduleKey) => visibleModules.includes(moduleKey));
         const workforceVisible = visibleModules.includes('workforce_module') && visibleModules.includes('workforce');
         const maintenanceVisible = visibleModules.includes('maintenance') && ['leave_management', 'roles'].some((moduleKey) => visibleModules.includes(moduleKey));
         const utilitiesVisible = visibleModules.includes('utilities') && ['scheduler', 'device_users'].some((moduleKey) => visibleModules.includes(moduleKey));
@@ -252,6 +323,7 @@ function Dashboard() {
   ].filter(([moduleKey]) => canView(moduleKey));
   const setupItems = [
     ['company', '\u25A3', 'Company'],
+    ['site_settings', '✦', 'Site Settings'],
     ['organization', '\u25C8', 'Organization'],
     ['shift_management', '\u25E7', 'Shift Management'],
     ['leave_management', '▦', 'Leave Management'],
@@ -271,7 +343,7 @@ function Dashboard() {
       <aside className={`sidebar${mobileNavigationOpen ? ' sidebar-open' : ''}`} id="dashboard-sidebar">
         <button className="mobile-sidebar-close" type="button" ref={mobileNavigationCloseRef} onClick={() => closeMobileNavigation({ restoreToggleFocus: true })} aria-label="Close navigation"><span aria-hidden="true">×</span></button>
         <div className="sidebar-brand">
-          <Logo />
+          <Logo branding={siteSettings} />
           <button className="desktop-sidebar-toggle" type="button" onClick={() => setDesktopSidebarCollapsed((current) => !current)} aria-expanded={!desktopSidebarCollapsed} aria-controls="dashboard-sidebar" aria-label={desktopSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} title={desktopSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}><span aria-hidden="true">{desktopSidebarCollapsed ? '›' : '‹'}</span></button>
         </div>
         <nav aria-label="Dashboard navigation" onClick={(event) => {
@@ -308,7 +380,7 @@ function Dashboard() {
             <button className="mobile-nav-toggle" type="button" ref={mobileNavigationToggleRef} onClick={openMobileNavigation} aria-expanded={mobileNavigationOpen} aria-controls="dashboard-sidebar" aria-label="Open navigation"><span aria-hidden="true">☰</span></button>
             <i>{initials}</i>
             <span><strong>{user.displayName}</strong><small>{user.role}</small></span>
-            <button type="button" onClick={() => window.location.assign('/logout')} aria-label="Sign out">Sign out <b>↪</b></button>
+            <div className="header-actions"><ThemeToggle mode={themeMode} onChange={onThemeModeChange} /><button className="header-signout" type="button" onClick={() => window.location.assign('/logout')} aria-label="Sign out"><span>Sign out</span><b aria-hidden="true">↪</b></button></div>
           </div>
         </header>
         <main className="dashboard-main" id={activeModule} ref={dashboardMainRef} tabIndex={-1} aria-label={`${activeModule} module`}>
@@ -317,6 +389,7 @@ function Dashboard() {
           {activeModule === 'workforce_module' && <WorkforceModule user={user} onNavigate={setActiveModule} />}
           {activeModule === 'setup' && <Setup user={user} onNavigate={setActiveModule} />}
           {activeModule === 'company' && <CompanyProfile permission={effectiveModulePermission(user,'company')} onNavigate={setActiveModule} onNotify={showModal} canViewOrganization={Boolean(effectiveModulePermission(user,'organization')?.view)} />}
+          {activeModule === 'site_settings' && <SiteSettings permission={effectiveModulePermission(user,'site_settings')} branding={siteSettings} onSettingsChange={onSiteSettingsChange} onNotify={showModal} />}
           {activeModule === 'organization' && <Organization user={user} />}
           {activeModule === 'maintenance' && <Maintenance user={user} onNavigate={setActiveModule} />}
           {activeModule === 'utilities' && <Utilities user={user} onNavigate={setActiveModule} />}
@@ -347,14 +420,14 @@ function Dashboard() {
 }
 
 function Overview({ user, onNavigate }) {
-  const childModuleKeys = ['maintenance','company','organization','tax_configuration','workforce','leave_management','roles','time_entries','exemption_report','shift_management','requests','leave_application','overtime_request','shift_change','scheduler','device_users','payroll_setup','payroll_tax','payroll_runs','payout_view','disbursement','calendar'];
+  const childModuleKeys = ['maintenance','company','site_settings','organization','tax_configuration','workforce','leave_management','roles','time_entries','exemption_report','shift_management','requests','leave_application','overtime_request','shift_change','scheduler','device_users','payroll_setup','payroll_tax','payroll_runs','payout_view','disbursement','calendar'];
   const visibleModules = user.permissions.filter((permission) => permission.view && permission.moduleKey !== 'overview' && !childModuleKeys.includes(permission.moduleKey));
   const calendarVisible = Boolean(effectiveModulePermission(user,'calendar')?.view);
   return <section className="overview-view"><div className="module-title"><div><span>Workspace</span><h1>Welcome, {user.displayName.split(' ')[0]}</h1><p>Choose a module to continue.</p></div></div>{calendarVisible&&<UpcomingCalendarCard onNavigate={onNavigate}/>}<div className="module-grid">{visibleModules.map((permission) => <button type="button" key={permission.moduleKey} onClick={() => onNavigate(permission.moduleKey)}><strong>{permission.moduleName}</strong><span>Open module →</span></button>)}</div></section>;
 }
 
 function Setup({ user, onNavigate }) {
-  const setupModules = ['company', 'organization', 'shift_management', 'leave_management', 'roles'].map((moduleKey) => effectiveModulePermission(user,moduleKey)).filter((permission) => permission?.view);
+  const setupModules = ['company', 'site_settings', 'organization', 'shift_management', 'leave_management', 'roles'].map((moduleKey) => effectiveModulePermission(user,moduleKey)).filter((permission) => permission?.view);
   return <section className="overview-view"><div className="module-title"><div><span>Configuration</span><h1>Setup</h1><p>Manage company, organization, shifts, leave, and access settings.</p></div></div><div className="module-grid">{setupModules.map((permission) => <button type="button" key={permission.moduleKey} onClick={() => onNavigate(permission.moduleKey)}><strong>{permission.moduleName}</strong><span>Open submodule →</span></button>)}</div></section>;
 }
 
@@ -2720,7 +2793,7 @@ function RoleAccess({ user }) {
 
 function roleAccessModules(modules) {
   const parentLabels = {
-    company: 'Setup', organization: 'Setup',
+    company: 'Setup', site_settings: 'Setup', organization: 'Setup',
     workforce: 'Workforce', leave_management: 'Setup', roles: 'Setup',
     shift_management: 'Setup', time_entries: 'Timetracking', exemption_report: 'Timetracking', requests: 'Timetracking', leave_application: 'Timetracking', overtime_request: 'Timetracking', shift_change: 'Timetracking',
     scheduler: 'Utilities', device_users: 'Utilities',
@@ -2739,7 +2812,7 @@ function permissionMap(permissions, modules) {
   }));
 }
 
-function LogoutConfirmation() {
+function LogoutConfirmation({ branding = defaultSiteSettings, themeMode, onThemeModeChange }) {
   const [user, setUser] = useState(null);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useModalMessage('error');
@@ -2772,7 +2845,7 @@ function LogoutConfirmation() {
 
   return (
     <div className="logout-page">
-      <header className="site-header"><Logo /></header>
+      <header className="site-header"><div className="site-header-inner"><Logo branding={branding} /><ThemeToggle mode={themeMode} onChange={onThemeModeChange} /></div></header>
       <main className="logout-main">
         <section className="logout-card" aria-labelledby="logout-title">
           <div className="logout-symbol" aria-hidden="true"><span>↪</span></div>
@@ -2786,7 +2859,7 @@ function LogoutConfirmation() {
           </div>
         </section>
       </main>
-      <footer><span>© 2026 PayTimePro</span><span>Secure workforce access</span></footer>
+      <footer><span>© 2026 {branding.siteName}</span><span>{branding.footerText}</span></footer>
     </div>
   );
 }

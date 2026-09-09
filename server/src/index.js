@@ -23,6 +23,7 @@ import { disbursementRouter } from './routes/disbursement.js';
 import { taxRouter } from './routes/tax.js';
 import { calendarRouter } from './routes/calendar.js';
 import { companyRouter } from './routes/company.js';
+import { siteSettingsRouter } from './routes/site-settings.js';
 
 export const app = express();
 const PgSession = connectPgSimple(session);
@@ -242,6 +243,7 @@ app.use('/api/payroll', disbursementRouter);
 app.use('/api/tax-configurations', taxRouter);
 app.use('/api/calendar', calendarRouter);
 app.use('/api/company', companyRouter);
+app.use('/api/site-settings', siteSettingsRouter);
 
 app.use((error, request, response, _next) => {
   const requestId = request.requestId || randomUUID();

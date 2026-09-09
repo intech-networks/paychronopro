@@ -2,6 +2,7 @@ import { pool } from '../db/pool.js';
 
 export const parentModuleByChild = {
   company: 'setup',
+  site_settings: 'setup',
   organization: 'setup',
   shift_management: 'setup',
   tax_configuration: 'payroll',

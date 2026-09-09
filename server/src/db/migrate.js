@@ -71,6 +71,7 @@ try {
        ('overview', 'Overview', 'Dashboard overview and personal summary.', 10),
        ('setup', 'Setup', 'Parent module for company and organization configuration.', 11),
        ('company', 'Company', 'Company profile and settings.', 12),
+       ('site_settings', 'Site Settings', 'Manage site identity, logo, and application colors.', 12),
        ('organization', 'Organization', 'Organization structure and settings.', 13),
        ('workforce_module', 'Workforce', 'Parent module for employee records and workforce information.', 14),
        ('tax_configuration', 'Tax Configuration', 'Configure Philippine salary tax withholding rules.', 72),

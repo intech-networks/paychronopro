@@ -14,6 +14,7 @@ function userWith(...permissions) {
 test('defines every parent and child module relationship', () => {
   assert.deepEqual(parentModuleByChild, {
     company: 'setup',
+    site_settings: 'setup',
     organization: 'setup',
     shift_management: 'setup',
     tax_configuration: 'payroll',

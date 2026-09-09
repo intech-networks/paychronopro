@@ -28,7 +28,7 @@ function isWebsite(value) {
   }
 }
 
-function imageMatchesMimeType(buffer, mimeType) {
+export function imageMatchesMimeType(buffer, mimeType) {
   if (mimeType === 'image/png') {
     return buffer.length >= 8
       && buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
@@ -36,19 +36,25 @@ function imageMatchesMimeType(buffer, mimeType) {
   if (mimeType === 'image/jpeg') {
     return buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
   }
+  if (mimeType === 'image/x-icon') {
+    return buffer.length >= 22
+      && buffer.readUInt16LE(0) === 0
+      && buffer.readUInt16LE(2) === 1
+      && buffer.readUInt16LE(4) >= 1;
+  }
   return buffer.length >= 12
     && buffer.subarray(0, 4).toString('ascii') === 'RIFF'
     && buffer.subarray(8, 12).toString('ascii') === 'WEBP';
 }
 
-function decodeBase64Image(value, mimeType) {
+export function decodeBase64Image(value, mimeType, maximumBytes = maximumCompanyLogoBytes) {
   const base64 = cleanText(value);
-  const maximumBase64Length = Math.ceil(maximumCompanyLogoBytes * 4 / 3) + 4;
+  const maximumBase64Length = Math.ceil(maximumBytes * 4 / 3) + 4;
   const validBase64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
 
   if (!base64 || base64.length > maximumBase64Length || !validBase64.test(base64)) return null;
   const buffer = Buffer.from(base64, 'base64');
-  if (!buffer.length || buffer.length > maximumCompanyLogoBytes || buffer.toString('base64') !== base64) return null;
+  if (!buffer.length || buffer.length > maximumBytes || buffer.toString('base64') !== base64) return null;
   return imageMatchesMimeType(buffer, mimeType) ? buffer : null;
 }
 
