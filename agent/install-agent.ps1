@@ -12,6 +12,7 @@ New-Item -ItemType Directory -Path $installPath -Force | Out-Null
 Copy-Item -LiteralPath (Join-Path $sourcePath 'package.json') -Destination $installPath -Force
 Copy-Item -LiteralPath (Join-Path $sourcePath 'package-lock.json') -Destination $installPath -Force
 Copy-Item -LiteralPath (Join-Path $sourcePath 'src') -Destination $installPath -Recurse -Force
+Copy-Item -LiteralPath (Join-Path $sourcePath 'scripts') -Destination $installPath -Recurse -Force
 Push-Location $installPath
 try { & npm.cmd ci --omit=dev; if ($LASTEXITCODE -ne 0) { throw 'npm install failed.' } } finally { Pop-Location }
 @("PAYTIMEPRO_API_URL=$($apiUrl.TrimEnd('/'))","AGENT_ID=$agentId","AGENT_SECRET=$secret","POLL_INTERVAL_SECONDS=15") | Set-Content -LiteralPath (Join-Path $installPath '.env') -Encoding UTF8
