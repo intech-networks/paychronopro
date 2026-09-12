@@ -515,6 +515,23 @@ body {
   background: var(--app-surface-raised);
 }
 
+.dashboard-main :is(
+  .primary-action,
+  .primary-calendar-action,
+  .form-save,
+  .save-tax,
+  .submit-button,
+  .confirm-button,
+  .save-access,
+  .module-title > button,
+  .company-organization-link,
+  .view-request-calendar
+) {
+  border-color: var(--navy) !important;
+  color: var(--navy-contrast, #fff) !important;
+  background: var(--navy) !important;
+}
+
 .dashboard-main :where(.dashboard-grid article:not(.clock-card), .new-role-form, .rbac-layout, .permission-panel, .role-list, .user-role-table, .workforce-toolbar, .employee-table, .workforce-directory-card, .company-directory-card, .company-departments-card, .employee-editor, .calendar-toolbar, .calendar-management-list, .calendar-detail-list, .upcoming-calendar-card, .scheduler-card, .exemption-report-card, .exemption-report-table, .leave-balance-card, .leave-request-card, .leave-review-card, .submitted-leave-card, .shift-calendar-card, .time-entry-section, .time-entry-table, .payroll-editor, .payroll-employee-list, .disbursement-run-list, .disbursement-table, .payroll-run-history-table, .payroll-run-table, .assignment-directory, .assignment-selection-panel, .assignment-review-panel, .organization-assignment-dialog) {
   border-color: var(--app-border);
   background: var(--app-surface);
