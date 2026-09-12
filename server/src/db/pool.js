@@ -27,9 +27,9 @@ class ApplicationSchemaPool extends pg.Pool {
   }
 }
 
-export const pool = new ApplicationSchemaPool({
-  connectionString: config.databaseUrl,
-  ssl: config.databaseSsl ? { rejectUnauthorized: true } : false
-});
+const poolOptions = { connectionString: config.databaseUrl };
+if (config.databaseSsl) poolOptions.ssl = { rejectUnauthorized: true };
+
+export const pool = new ApplicationSchemaPool(poolOptions);
 
 pool.on('error', (error) => console.error('Unexpected PostgreSQL error', error));

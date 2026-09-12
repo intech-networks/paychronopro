@@ -57,9 +57,31 @@ Incremental SQL migrations live in `database/migrations` and are recorded in the
 ## Production configuration
 
 Production refuses to start with the built-in development session secret. Set a
-long random `SESSION_SECRET`. Enable `DATABASE_SSL=true` only when the database
-server presents a certificate trusted by Node.js. Set `TRUST_PROXY=true` when the
-API runs behind a trusted reverse proxy that terminates HTTPS.
+long random `SESSION_SECRET` and set `DATABASE_URL` to the connection string from
+Neon. Keep Neon’s `sslmode=require` in that URL; the server preserves that setting.
+Set `DATABASE_SCHEMA=paytimepro` unless the migrations were applied to another
+schema. Set `CLIENT_ORIGIN` to the deployed site origin and `TRUST_PROXY=true`.
+
+For Vercel, add these variables for the Production environment and redeploy:
+
+```env
+DATABASE_URL=postgresql://...
+DATABASE_SCHEMA=paytimepro
+SESSION_SECRET=<a-long-random-secret>
+CLIENT_ORIGIN=https://your-site.vercel.app
+TRUST_PROXY=true
+```
+
+Apply the migrations against the same Neon database before opening the site:
+
+```powershell
+$env:DATABASE_URL = 'postgresql://...'
+$env:DATABASE_SCHEMA = 'paytimepro'
+npm run db:migrate
+```
+
+After deployment, check `https://your-site.vercel.app/api/health`. It should return
+database and migration checks instead of a Vercel function error.
 
 For local API diagnosis, set `DEBUG_API_ERRORS=true`. Unexpected API failures
 remain safe for users but include a request reference; the server log records the

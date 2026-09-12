@@ -5,6 +5,7 @@ dotenv.config({ path: new URL('../../.env', import.meta.url), quiet: true });
 const isProduction = process.env.NODE_ENV === 'production';
 const sessionSecret = process.env.SESSION_SECRET || 'development-only-change-this-secret';
 const databaseSchema = process.env.DATABASE_SCHEMA || 'paytimepro';
+const configuredDatabaseUrl = process.env.DATABASE_URL;
 
 function normalizeDatabaseUrl(value) {
   try {
@@ -22,13 +23,17 @@ if (isProduction && (sessionSecret.length < 32 || sessionSecret === 'development
   throw new Error('SESSION_SECRET must be set to a unique value of at least 32 characters in production.');
 }
 
+if (isProduction && !configuredDatabaseUrl) {
+  throw new Error('DATABASE_URL must be set in production.');
+}
+
 if (!/^[a-z_][a-z0-9_]*$/.test(databaseSchema)) {
   throw new Error('DATABASE_SCHEMA must contain only lowercase letters, numbers, and underscores, and cannot start with a number.');
 }
 
 export const config = {
   port: Number(process.env.PORT) || 5000,
-  databaseUrl: normalizeDatabaseUrl(process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/paytimepro'),
+  databaseUrl: normalizeDatabaseUrl(configuredDatabaseUrl || 'postgresql://postgres:postgres@localhost:5432/paytimepro'),
   databaseSchema,
   clientOrigin: process.env.CLIENT_ORIGIN || 'http://localhost:5173',
   sessionSecret,
