@@ -12,7 +12,7 @@ A local PERN development environment using PostgreSQL, Express, React (Vite), an
 
 This machine has PostgreSQL 18 installed in `C:\Program Files\PostgreSQL\18`. First create the application database from PowerShell:
 
-```powershell
+```powershells
 & "C:\Program Files\PostgreSQL\18\bin\createdb.exe" -U postgres paytimepro
 ```
 
