@@ -17,7 +17,6 @@ import { SiteSettings, defaultSiteSettings } from './SiteSettings.jsx';
 import { applySiteTheme } from './theme.js';
 
 const DeviceUsersModuleContext = createContext(false);
-const administratorHiddenModuleKeys = new Set(['leave_application', 'overtime_request', 'shift_change']);
 const leaveBalanceFields = [
   ['vacationLeave', 'Vacation'],
   ['sickLeave', 'Sick'],
@@ -36,9 +35,6 @@ function effectiveModulePermission(user, moduleKey) {
   const permission = user.permissions.find((item) => item.moduleKey === moduleKey);
   if (user.role === 'Administrator' && ['setup', 'company', 'site_settings', 'organization', 'tax_configuration'].includes(moduleKey) && !permission) {
     return { moduleKey, moduleName:moduleKey === 'setup' ? 'Setup' : moduleKey === 'company' ? 'Company' : moduleKey === 'site_settings' ? 'Site Settings' : moduleKey === 'organization' ? 'Organization' : 'Tax', create:true, view:true, update:true, delete:true };
-  }
-  if (user.role === 'Administrator' && administratorHiddenModuleKeys.has(moduleKey)) {
-    return { ...permission, create:false, view:false, update:false, delete:false };
   }
   const parentKey = parentModuleByChild[moduleKey];
   if (!parentKey) return permission;
@@ -261,7 +257,7 @@ function Dashboard({ siteSettings = defaultSiteSettings, onSiteSettingsChange, t
       })
       .then((data) => {
         setUser(data.user);
-        const visibleModules = data.user.permissions.filter((permission) => permission.view && !(data.user.role === 'Administrator' && administratorHiddenModuleKeys.has(permission.moduleKey))).map((permission) => permission.moduleKey);
+        const visibleModules = data.user.permissions.filter((permission) => permission.view).map((permission) => permission.moduleKey);
         if (visibleModules.includes('payroll_setup')) visibleModules.push('payroll_tax');
         if (visibleModules.includes('payroll_setup') && visibleModules.includes('payout_view')) visibleModules.push('payroll_runs');
         if (data.user.role === 'Administrator') visibleModules.push('setup', 'company', 'site_settings', 'organization');
@@ -2784,7 +2780,7 @@ function RoleAccess({ user }) {
         <div className="permission-panel">
           <div className="permission-heading"><div><span>Permission profile</span><h2>{selected?.name||'Select a role'}</h2><p>{selected?.description||'Choose a role from the list to review its access.'}</p>{selected&&<small>{enabledModuleCount} of {modules.length} modules visible</small>}</div><div>{selected&&!selected.isSystem&&permission?.delete&&<button className="delete-role" onClick={deleteRole}>Delete role</button>}{selected&&permission?.update&&<button className="save-access" onClick={savePermissions} disabled={selected?.name==='Administrator'}>{selected?.name==='Administrator'?'Full access':'Save changes'}</button>}</div></div>
           {selected&&<div className="permission-guide"><i>i</i><span><strong>How permissions work</strong><small>View lets users open a module. Create, Update, and Delete control what they can do inside it. Parent access is enabled automatically when a child module is selected.</small></span></div>}
-          <div className="permission-table"><div className="permission-row permission-head"><span>Module</span>{['Create','View','Update','Delete'].map((operation)=><span key={operation}>{operation}</span>)}</div>{accessModules.map((module)=>{const permissionKeys=module.permissionKeys||[module.permissionKey||module.moduleKey];const administratorModuleLockedOff=selected?.name==='Administrator'&&administratorHiddenModuleKeys.has(module.moduleKey);return <div className={`permission-row ${module.isParent?'parent-module':''} ${module.isChild?'child-module':''}`} key={module.moduleKey}><div><strong>{module.name}</strong><small>{module.description}</small></div>{['create','view','update','delete'].map((operation)=><label key={operation} aria-label={`${module.name}: ${operation}`} title={administratorModuleLockedOff?'Employee self-service module hidden from Administrator':selected?.name==='Administrator'?'Administrator has full access':module.isParent?'Parent permission required by its child modules':undefined}><input type="checkbox" checked={!administratorModuleLockedOff&&(selected?.name==='Administrator'||permissionKeys.every((key)=>Boolean(draft[key]?.[operation])))} disabled={selected?.name==='Administrator'||!permission?.update} onChange={()=>toggleAccessModule(module,operation)}/><span/></label>)}</div>})}</div>
+          <div className="permission-table"><div className="permission-row permission-head"><span>Module</span>{['Create','View','Update','Delete'].map((operation)=><span key={operation}>{operation}</span>)}</div>{accessModules.map((module)=>{const permissionKeys=module.permissionKeys||[module.permissionKey||module.moduleKey];return <div className={`permission-row ${module.isParent?'parent-module':''} ${module.isChild?'child-module':''}`} key={module.moduleKey}><div><strong>{module.name}</strong><small>{module.description}</small></div>{['create','view','update','delete'].map((operation)=><label key={operation} aria-label={`${module.name}: ${operation}`} title={selected?.name==='Administrator'?'Administrator has full access':module.isParent?'Parent permission required by its child modules':undefined}><input type="checkbox" checked={selected?.name==='Administrator'||permissionKeys.every((key)=>Boolean(draft[key]?.[operation]))} disabled={selected?.name==='Administrator'||!permission?.update} onChange={()=>toggleAccessModule(module,operation)}/><span/></label>)}</div>})}</div>
         </div>
       </div>
     </section>

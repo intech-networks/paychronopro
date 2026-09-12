@@ -102,11 +102,7 @@ try {
   );
   await pool.query(
     `INSERT INTO role_permissions (role_id, module_id, can_create, can_view, can_update, can_delete)
-     SELECT r.id, m.id,
-       m.module_key NOT IN ('leave_application', 'overtime_request', 'shift_change'),
-       m.module_key NOT IN ('leave_application', 'overtime_request', 'shift_change'),
-       m.module_key NOT IN ('leave_application', 'overtime_request', 'shift_change'),
-       m.module_key NOT IN ('leave_application', 'overtime_request', 'shift_change')
+     SELECT r.id, m.id, TRUE, TRUE, TRUE, TRUE
      FROM roles r CROSS JOIN modules m
      WHERE r.name = 'Administrator'
      ON CONFLICT (role_id, module_id) DO UPDATE SET
