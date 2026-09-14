@@ -47,9 +47,9 @@ Open http://localhost:5173. The API runs at http://localhost:5000 and the health
 - `npm run check` validates server syntax, runs tests, and builds the client.
 
 Environment values are loaded from the repository-root `.env` when commands run from the root directory.
-By default, PayTimePro uses its own `paytimepro` database schema. This lets it share a PostgreSQL database with unrelated applications without reusing their tables. Set `DATABASE_SCHEMA` only when you need a different lowercase schema name.
-
-If an existing PayTimePro installation still uses PostgreSQL's `public` schema, set `DATABASE_SCHEMA=public` before migrating or starting the API. The migration command stops rather than silently creating a separate empty application schema when it detects the current PayTimePro table set in `public`.
+By default, PayTimePro uses PostgreSQL's `public` schema for compatibility with
+existing installations. Set `DATABASE_SCHEMA` to a different lowercase schema
+name only when the migrations were applied to that schema intentionally.
 
 Incremental SQL migrations live in `database/migrations` and are recorded in the
 `schema_migrations` table. Migration files are applied once in filename order.
@@ -59,14 +59,14 @@ Incremental SQL migrations live in `database/migrations` and are recorded in the
 Production refuses to start with the built-in development session secret. Set a
 long random `SESSION_SECRET` and set `DATABASE_URL` to the connection string from
 Neon. Keep Neon’s `sslmode=require` in that URL; the server preserves that setting.
-Set `DATABASE_SCHEMA=paytimepro` unless the migrations were applied to another
-schema. Set `CLIENT_ORIGIN` to the deployed site origin and `TRUST_PROXY=true`.
+Set `DATABASE_SCHEMA=public` for the existing production database. Set
+`CLIENT_ORIGIN` to the deployed site origin and `TRUST_PROXY=true`.
 
 For Vercel, add these variables for the Production environment and redeploy:
 
 ```env
 DATABASE_URL=postgresql://...
-DATABASE_SCHEMA=paytimepro
+DATABASE_SCHEMA=public
 SESSION_SECRET=<a-long-random-secret>
 CLIENT_ORIGIN=https://your-site.vercel.app
 TRUST_PROXY=true
@@ -76,7 +76,7 @@ Apply the migrations against the same Neon database before opening the site:
 
 ```powershell
 $env:DATABASE_URL = 'postgresql://...'
-$env:DATABASE_SCHEMA = 'paytimepro'
+$env:DATABASE_SCHEMA = 'public'
 npm run db:migrate
 ```
 

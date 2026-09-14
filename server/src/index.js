@@ -172,12 +172,18 @@ app.get('/api/health', async (_request, response) => {
     response.status(schemaReady ? 200 : 503).json({
       status: schemaReady ? 'ok' : 'degraded',
       database: 'connected',
+      databaseSchema: config.databaseSchema,
       schema: schemaReady ? 'ready' : 'missing',
       checks: result.rows[0]
     });
   } catch (error) {
     console.error('Database health check failed', error);
-    response.status(503).json({ status: 'degraded', database: 'disconnected', schema: 'unknown' });
+    response.status(503).json({
+      status: 'degraded',
+      database: 'disconnected',
+      databaseSchema: config.databaseSchema,
+      schema: 'unknown'
+    });
   }
 });
 

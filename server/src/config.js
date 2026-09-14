@@ -4,7 +4,11 @@ dotenv.config({ path: new URL('../../.env', import.meta.url), quiet: true });
 
 const isProduction = process.env.NODE_ENV === 'production';
 const sessionSecret = process.env.SESSION_SECRET || 'development-only-change-this-secret';
-const databaseSchema = process.env.DATABASE_SCHEMA || 'paytimepro';
+// Existing PayTimePro installations, including the production Neon database,
+// store their data in PostgreSQL's public schema. Keep that as the fallback so
+// a hosting provider dropping DATABASE_SCHEMA cannot silently point the app at
+// a different, empty schema.
+const databaseSchema = process.env.DATABASE_SCHEMA || 'public';
 const configuredDatabaseUrl = process.env.DATABASE_URL;
 
 function normalizeDatabaseUrl(value) {
