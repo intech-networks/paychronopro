@@ -4,7 +4,7 @@ A local PERN development environment using PostgreSQL, Express, React (Vite), an
 
 ## Requirements
 
-- Node.js 22+++
+- Node.js 22++
 - npm 10+
 - A locally installed PostgreSQL 15+ server
 
