@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import './tax.css';
 import './payroll-tax.css';
 import './payroll-workspace.css';
+import './payroll-contributions.css';
 import './payroll-runs.css';
 import './disbursement.css';
 import './exemption-report.css';
@@ -818,91 +819,725 @@ function Payroll({ user, onNavigate }) {
   return <section className="overview-view payroll-workspace"><div className="module-title"><div><span>Compensation</span><h1>Payroll</h1><p>Choose a payroll module to configure compensation, calculate pay, or release finalized payroll.</p></div></div><div className="module-grid">{setup?.view&&<button type="button" onClick={()=>onNavigate('payroll_setup')}><strong>Salary Setup</strong><span>Salary, earnings and deductions →</span></button>}{tax?.view&&<button type="button" onClick={()=>onNavigate('tax_configuration')}><strong>Tax Configuration</strong><span>BIR tables and effective dates →</span></button>}{setup?.view&&<button type="button" onClick={()=>onNavigate('payroll_tax')}><strong>Tax Calculator</strong><span>Calculate and review withholding →</span></button>}{setup?.view&&payout?.view&&<button type="button" onClick={()=>onNavigate('payroll_runs')}><strong>Payroll Runs</strong><span>Calculate, create, and finalize payroll →</span></button>}{payout?.view&&<button type="button" onClick={()=>onNavigate('payout_view')}><strong>Payout View</strong><span>Actual pay based on setup and attendance →</span></button>}{disbursement?.view&&<button type="button" onClick={()=>onNavigate('disbursement')}><strong>Disbursement</strong><span>Track payroll payment release →</span></button>}</div></section>;
 }
 
-const emptyPayrollProfile={payBasis:'monthly',payFrequency:'semi_monthly',baseRate:'',monthlyContributionBase:'',standardHoursPerDay:'8',taxStatus:'taxable',effectiveDate:'',isMinimumWageEarner:false,minimumWageRegion:'',minimumDailyWage:'',autoCalculateContributions:true,contributionDeductionSchedule:'split_evenly',sssEmployeeShare:'0',philhealthEmployeeShare:'0',pagibigEmployeeShare:'0',unionDues:'0',notes:'',components:[]};
+const emptyPayrollProfile = {
+  payBasis: "monthly",
+  payFrequency: "semi_monthly",
+  baseRate: "",
+  monthlyContributionBase: "",
+  standardHoursPerDay: "8",
+  taxStatus: "taxable",
+  effectiveDate: "",
+  isMinimumWageEarner: false,
+  minimumWageRegion: "",
+  minimumDailyWage: "",
+  autoCalculateContributions: true,
+  contributionDeductionSchedule: "split_evenly",
+  sssEmployeeShare: "0",
+  philhealthEmployeeShare: "0",
+  pagibigEmployeeShare: "0",
+  unionDues: "0",
+  notes: "",
+  components: [],
+};
 
 function PayrollSetup({ user }) {
-  const permission=effectiveModulePermission(user,'payroll_setup');
-  const [employees,setEmployees]=useState([]),[selected,setSelected]=useState(null),[form,setForm]=useState(emptyPayrollProfile),[search,setSearch]=useState(''),[loading,setLoading]=useState(true),[saving,setSaving]=useState(false),[message,setMessage]=useState('');
-  const selectionRequestRef=useRef(null);
-  useEffect(()=>{const controller=new AbortController();setLoading(true);fetch(`/api/payroll/employees?search=${encodeURIComponent(search)}`,{signal:controller.signal}).then(async r=>{const d=await r.json();if(!r.ok)throw new Error(d.error);setEmployees(d.employees);}).catch(e=>{if(e.name!=='AbortError')setMessage(e.message);}).finally(()=>{if(!controller.signal.aborted)setLoading(false);});return()=>controller.abort();},[search]);
+  const permission = effectiveModulePermission(user, "payroll_setup");
+  const [employees, setEmployees] = useState([]),
+    [selected, setSelected] = useState(null),
+    [form, setForm] = useState(emptyPayrollProfile),
+    [search, setSearch] = useState(""),
+    [loading, setLoading] = useState(true),
+    [saving, setSaving] = useState(false),
+    [message, setMessage] = useState("");
+  const selectionRequestRef = useRef(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    setLoading(true);
+    fetch(`/api/payroll/employees?search=${encodeURIComponent(search)}`, {
+      signal: controller.signal,
+    })
+      .then(async (r) => {
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error);
+        setEmployees(d.employees);
+      })
+      .catch((e) => {
+        if (e.name !== "AbortError") setMessage(e.message);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
+  }, [search]);
   async function choose(employee) {
     selectionRequestRef.current?.abort();
     const controller = new AbortController();
     selectionRequestRef.current = controller;
     setSelected(employee);
     setForm(emptyPayrollProfile);
-    setMessage('');
+    setMessage("");
     setLoading(true);
     try {
-      const response = await fetch(`/api/payroll/employees/${employee.id}`, { signal:controller.signal });
+      const response = await fetch(`/api/payroll/employees/${employee.id}`, {
+        signal: controller.signal,
+      });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Unable to load payroll settings.');
+      if (!response.ok)
+        throw new Error(data.error || "Unable to load payroll settings.");
       if (selectionRequestRef.current !== controller) return;
       setForm({
         ...emptyPayrollProfile,
         ...data.profile,
-        baseRate:data.profile?.baseRate ?? '',
-        monthlyContributionBase:data.profile?.monthlyContributionBase ?? data.profile?.baseRate ?? '',
-        minimumDailyWage:data.profile?.minimumDailyWage ?? '',
-        standardHoursPerDay:data.profile?.standardHoursPerDay ?? '8',
-        effectiveDate:data.profile?.effectiveDate?.slice(0,10) || '',
-        components:data.components || []
+        baseRate: data.profile?.baseRate ?? "",
+        monthlyContributionBase:
+          data.profile?.monthlyContributionBase ?? data.profile?.baseRate ?? "",
+        minimumDailyWage: data.profile?.minimumDailyWage ?? "",
+        standardHoursPerDay: data.profile?.standardHoursPerDay ?? "8",
+        effectiveDate: data.profile?.effectiveDate?.slice(0, 10) || "",
+        components: data.components || [],
       });
     } catch (error) {
-      if (error.name !== 'AbortError' && selectionRequestRef.current === controller) setMessage(error.message);
+      if (
+        error.name !== "AbortError" &&
+        selectionRequestRef.current === controller
+      )
+        setMessage(error.message);
     } finally {
       if (selectionRequestRef.current === controller) setLoading(false);
     }
   }
   useEffect(() => () => selectionRequestRef.current?.abort(), []);
-  function updateItem(index,field,value){setForm(current=>({...current,components:current.components.map((item,i)=>i===index?{...item,[field]:value}:item)}));}
-  function addItem(type){setForm(current=>({...current,components:[...current.components,{type,name:'',amount:'',calculation:'fixed',isTaxable:type==='earning',benefitCategory:'',isActive:true}]}));}
+  function updateItem(index, field, value) {
+    setForm((current) => ({
+      ...current,
+      components: current.components.map((item, i) =>
+        i === index ? { ...item, [field]: value } : item,
+      ),
+    }));
+  }
+  function addItem(type) {
+    setForm((current) => ({
+      ...current,
+      components: [
+        ...current.components,
+        {
+          type,
+          name: "",
+          amount: "",
+          calculation: "fixed",
+          isTaxable: type === "earning",
+          benefitCategory: "",
+          isActive: true,
+        },
+      ],
+    }));
+  }
   async function save(event) {
     event.preventDefault();
     if (!selected || saving) return;
     const employeeId = selected.id;
     setSaving(true);
-    setMessage('');
+    setMessage("");
     try {
       const response = await fetch(`/api/payroll/employees/${employeeId}`, {
-        method:'PUT',
-        headers:{ 'Content-Type':'application/json' },
-        body:JSON.stringify(form)
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Unable to save payroll settings.');
+      if (!response.ok)
+        throw new Error(data.error || "Unable to save payroll settings.");
       setMessage(data.message);
-      setEmployees((current) => current.map((employee) =>
-        employee.id === employeeId ? { ...employee, baseRate:form.baseRate, payBasis:form.payBasis } : employee
-      ));
+      setEmployees((current) =>
+        current.map((employee) =>
+          employee.id === employeeId
+            ? { ...employee, baseRate: form.baseRate, payBasis: form.payBasis }
+            : employee,
+        ),
+      );
     } catch (error) {
       setMessage(error.message);
     } finally {
       setSaving(false);
     }
   }
-  return <section className="payroll-setup-view"><div className="module-title"><div><span>Payroll</span><h1>Salary Setup</h1><p>Set each employee's compensation and recurring payroll items.</p></div></div>{message&&<p className="rbac-message" role="status">{message}</p>}<div className="payroll-setup-layout"><aside className="payroll-employee-list"><label><span>Find employee</span><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Name or employee number"/></label><div>{employees.map(employee=><button type="button" className={selected?.id===employee.id?'selected':''} key={employee.id} onClick={()=>choose(employee)}><span><strong>{employee.firstName} {employee.lastName}</strong><small>{employee.employeeNumber} · {employee.jobTitle||'No position'}</small></span><b>{employee.baseRate!=null?`₱${Number(employee.baseRate).toLocaleString()}`:'Not set'}</b></button>)}</div></aside><main className="payroll-editor">{!selected?<div className="time-entry-empty-state"><strong>Choose an employee</strong><p>Select someone from the list to configure their payroll details.</p></div>:<form onSubmit={save}><div className="payroll-editor-heading"><div><span>Payroll profile</span><h2>{selected.firstName} {selected.lastName}</h2></div><button disabled={!permission?.update||saving}>{saving?'Saving…':'Save setup'}</button></div><fieldset><legend>Compensation</legend><div className="payroll-field-grid"><label><span>Pay basis</span><select value={form.payBasis} onChange={e=>setForm({...form,payBasis:e.target.value})}><option value="monthly">Monthly salary</option><option value="daily">Daily rate</option><option value="hourly">Hourly rate</option></select></label><label><span>Base {form.payBasis==='monthly'?'salary':'rate'} (PHP)</span><input type="number" min="0" step="0.01" required value={form.baseRate} onChange={e=>setForm({...form,baseRate:e.target.value,monthlyContributionBase:form.payBasis==='monthly'?e.target.value:form.monthlyContributionBase})}/></label><label><span>Monthly statutory contribution base (PHP)</span><input type="number" min="0.01" step="0.01" required value={form.monthlyContributionBase} onChange={e=>setForm({...form,monthlyContributionBase:e.target.value})}/></label><label><span>Pay frequency</span><select value={form.payFrequency} onChange={e=>setForm({...form,payFrequency:e.target.value})}><option value="weekly">Weekly</option><option value="biweekly">Every two weeks</option><option value="semi_monthly">Semi-monthly</option><option value="monthly">Monthly</option></select></label><label><span>Standard hours/day</span><input type="number" min="0.01" max="24" step="0.25" required value={form.standardHoursPerDay} onChange={e=>setForm({...form,standardHoursPerDay:e.target.value})}/></label><label><span>Tax status</span><select value={form.taxStatus} onChange={e=>setForm({...form,taxStatus:e.target.value})}><option value="taxable">Taxable</option><option value="exempt">Tax exempt</option></select></label><label className="tax-active"><input type="checkbox" checked={form.isMinimumWageEarner} onChange={e=>setForm({...form,isMinimumWageEarner:e.target.checked})}/>Minimum-wage earner</label>{form.isMinimumWageEarner&&<><label><span>Applicable wage region</span><input required value={form.minimumWageRegion} onChange={e=>setForm({...form,minimumWageRegion:e.target.value})} placeholder="e.g. NCR"/></label><label><span>Current minimum daily wage (PHP)</span><input type="number" min="0.01" step="0.01" required value={form.minimumDailyWage} onChange={e=>setForm({...form,minimumDailyWage:e.target.value})}/></label></>}<label><span>Effective date</span><input type="date" value={form.effectiveDate} onChange={e=>setForm({...form,effectiveDate:e.target.value})}/></label></div></fieldset><fieldset><legend>Statutory contribution allocation</legend><div className="payroll-field-grid"><label className="tax-active"><input type="checkbox" checked={form.autoCalculateContributions} onChange={e=>setForm({...form,autoCalculateContributions:e.target.checked})}/>Automatically calculate employee and employer statutory shares</label>{form.autoCalculateContributions&&<label><span>Deduction schedule</span><select value={form.contributionDeductionSchedule} onChange={e=>setForm({...form,contributionDeductionSchedule:e.target.value})}>{form.payFrequency==='semi_monthly'&&<option value="split_evenly">Split evenly between cutoffs</option>}<option value="first_cutoff">Deduct in first half of month</option><option value="second_cutoff">Deduct in second half of month</option></select></label>}{!form.autoCalculateContributions&&[['sssEmployeeShare','SSS per pay period'],['philhealthEmployeeShare','PhilHealth per pay period'],['pagibigEmployeeShare','Pag-IBIG per pay period']].map(([key,label])=><label key={key}><span>{label}</span><input type="number" min="0" step="0.01" value={form[key]} onChange={e=>setForm({...form,[key]:e.target.value})}/></label>)}</div></fieldset>{['earning','deduction'].map(type=><fieldset key={type}><legend>{type==='earning'?'Recurring earnings':'Recurring deductions'}</legend>{form.components.map((item,index)=>item.type===type&&<div className="payroll-component" key={index}><input aria-label="Name" placeholder={type==='earning'?'Allowance name':'Deduction name'} value={item.name} onChange={e=>updateItem(index,'name',e.target.value)} required/><select aria-label="Calculation" value={item.calculation} onChange={e=>updateItem(index,'calculation',e.target.value)}><option value="fixed">Fixed amount</option><option value="percentage">Percentage</option></select><input aria-label="Amount" type="number" min="0" max={item.calculation==='percentage'?'100':undefined} step="0.01" value={item.amount} onChange={e=>updateItem(index,'amount',e.target.value)} required/>{type==='earning'&&<select aria-label="Statutory benefit category" value={item.benefitCategory||''} onChange={e=>updateItem(index,'benefitCategory',e.target.value)}><option value="">Not a statutory benefit</option><option value="rice">Rice subsidy</option><option value="uniform">Uniform/clothing</option><option value="medical_dependents">Dependent medical allowance</option><option value="medical_assistance">Medical assistance</option><option value="laundry">Laundry allowance</option><option value="achievement_award">Achievement award</option><option value="christmas_gifts">Christmas/anniversary gift</option><option value="cba_productivity">CBA/productivity incentive</option><option value="overtime_meal">Overtime meal</option><option value="thirteenth_month">13th month/other benefits</option></select>}<label className="payroll-check"><input type="checkbox" checked={item.isTaxable} disabled={Boolean(item.benefitCategory)} onChange={e=>updateItem(index,'isTaxable',e.target.checked)}/>Taxable</label><button type="button" onClick={()=>setForm({...form,components:form.components.filter((_,i)=>i!==index)})}>Remove</button></div>)}<button className="add-payroll-item" type="button" onClick={()=>addItem(type)}>+ Add {type}</button></fieldset>)}<label className="payroll-notes"><span>Notes</span><textarea rows="3" value={form.notes} onChange={e=>setForm({...form,notes:e.target.value})} placeholder="Internal payroll notes"/></label></form>}</main></div></section>;
+  return (
+    <section className="payroll-setup-view">
+      <div className="module-title">
+        <div>
+          <span>Payroll</span>
+          <h1>Salary Setup</h1>
+          <p>Set each employee's compensation and recurring payroll items.</p>
+        </div>
+      </div>
+      {message && (
+        <p className="rbac-message" role="status">
+          {message}
+        </p>
+      )}
+      <div className="payroll-setup-layout">
+        <aside className="payroll-employee-list">
+          <label>
+            <span>Find employee</span>
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Name or employee number"
+            />
+          </label>
+          <div>
+            {employees.map((employee) => (
+              <button
+                type="button"
+                className={selected?.id === employee.id ? "selected" : ""}
+                key={employee.id}
+                onClick={() => choose(employee)}
+              >
+                <span>
+                  <strong>
+                    {employee.firstName} {employee.lastName}
+                  </strong>
+                  <small>
+                    {employee.employeeNumber} ·{" "}
+                    {employee.jobTitle || "No position"}
+                  </small>
+                </span>
+                <b>
+                  {employee.baseRate != null
+                    ? `₱${Number(employee.baseRate).toLocaleString()}`
+                    : "Not set"}
+                </b>
+              </button>
+            ))}
+          </div>
+        </aside>
+        <main className="payroll-editor">
+          {!selected ? (
+            <div className="time-entry-empty-state">
+              <strong>Choose an employee</strong>
+              <p>
+                Select someone from the list to configure their payroll details.
+              </p>
+            </div>
+          ) : (
+            <form onSubmit={save}>
+              <div className="payroll-editor-heading">
+                <div>
+                  <span>Payroll profile</span>
+                  <h2>
+                    {selected.firstName} {selected.lastName}
+                  </h2>
+                </div>
+                <button disabled={!permission?.update || saving}>
+                  {saving ? "Saving…" : "Save setup"}
+                </button>
+              </div>
+              <fieldset>
+                <legend>Compensation</legend>
+                <div className="payroll-field-grid">
+                  <label>
+                    <span>Pay basis</span>
+                    <select
+                      value={form.payBasis}
+                      onChange={(e) =>
+                        setForm({ ...form, payBasis: e.target.value })
+                      }
+                    >
+                      <option value="monthly">Monthly salary</option>
+                      <option value="daily">Daily rate</option>
+                      <option value="hourly">Hourly rate</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>
+                      Base {form.payBasis === "monthly" ? "salary" : "rate"}{" "}
+                      (PHP)
+                    </span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      required
+                      value={form.baseRate}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          baseRate: e.target.value,
+                          monthlyContributionBase:
+                            form.payBasis === "monthly"
+                              ? e.target.value
+                              : form.monthlyContributionBase,
+                        })
+                      }
+                    />
+                  </label>
+                  <label>
+                    <span>Monthly statutory contribution base (PHP)</span>
+                    <input
+                      type="number"
+                      min="0.01"
+                      step="0.01"
+                      required
+                      value={form.monthlyContributionBase}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          monthlyContributionBase: e.target.value,
+                        })
+                      }
+                    />
+                  </label>
+                  <label>
+                    <span>Pay frequency</span>
+                    <select
+                      value={form.payFrequency}
+                      onChange={(e) =>
+                        setForm({ ...form, payFrequency: e.target.value })
+                      }
+                    >
+                      <option value="weekly">Weekly</option>
+                      <option value="biweekly">Every two weeks</option>
+                      <option value="semi_monthly">Semi-monthly</option>
+                      <option value="monthly">Monthly</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>Standard hours/day</span>
+                    <input
+                      type="number"
+                      min="0.01"
+                      max="24"
+                      step="0.25"
+                      required
+                      value={form.standardHoursPerDay}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          standardHoursPerDay: e.target.value,
+                        })
+                      }
+                    />
+                  </label>
+                  <label>
+                    <span>Tax status</span>
+                    <select
+                      value={form.taxStatus}
+                      onChange={(e) =>
+                        setForm({ ...form, taxStatus: e.target.value })
+                      }
+                    >
+                      <option value="taxable">Taxable</option>
+                      <option value="exempt">Tax exempt</option>
+                    </select>
+                  </label>
+                  <label className="tax-active">
+                    <input
+                      type="checkbox"
+                      checked={form.isMinimumWageEarner}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          isMinimumWageEarner: e.target.checked,
+                        })
+                      }
+                    />
+                    Minimum-wage earner
+                  </label>
+                  {form.isMinimumWageEarner && (
+                    <>
+                      <label>
+                        <span>Applicable wage region</span>
+                        <input
+                          required
+                          value={form.minimumWageRegion}
+                          onChange={(e) =>
+                            setForm({
+                              ...form,
+                              minimumWageRegion: e.target.value,
+                            })
+                          }
+                          placeholder="e.g. NCR"
+                        />
+                      </label>
+                      <label>
+                        <span>Current minimum daily wage (PHP)</span>
+                        <input
+                          type="number"
+                          min="0.01"
+                          step="0.01"
+                          required
+                          value={form.minimumDailyWage}
+                          onChange={(e) =>
+                            setForm({
+                              ...form,
+                              minimumDailyWage: e.target.value,
+                            })
+                          }
+                        />
+                      </label>
+                    </>
+                  )}
+                  <label>
+                    <span>Effective date</span>
+                    <input
+                      type="date"
+                      value={form.effectiveDate}
+                      onChange={(e) =>
+                        setForm({ ...form, effectiveDate: e.target.value })
+                      }
+                    />
+                  </label>
+                </div>
+              </fieldset>
+              <fieldset className="contribution-allocation">
+                <legend>Statutory contribution allocation</legend>
+                <div className="contribution-toolbar">
+                  <label className="contribution-toggle">
+                    <input
+                      type="checkbox"
+                      checked={form.autoCalculateContributions}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          autoCalculateContributions: e.target.checked,
+                        })
+                      }
+                    />
+                    Automatically calculate employee and employer statutory
+                    shares
+                  </label>
+                  {form.autoCalculateContributions && (
+                    <label className="contribution-schedule">
+                      <span>Deduction schedule</span>
+                      <select
+                        value={form.contributionDeductionSchedule}
+                        onChange={(e) =>
+                          setForm({
+                            ...form,
+                            contributionDeductionSchedule: e.target.value,
+                          })
+                        }
+                      >
+                        {form.payFrequency === "semi_monthly" && (
+                          <option value="split_evenly">
+                            Split evenly between cutoffs
+                          </option>
+                        )}
+                        <option value="first_cutoff">
+                          Deduct in first half of month
+                        </option>
+                        <option value="second_cutoff">
+                          Deduct in second half of month
+                        </option>
+                      </select>
+                    </label>
+                  )}
+                </div>
+                {!form.autoCalculateContributions && (
+                  <div className="manual-contribution-grid">
+                    {[
+                      ["sssEmployeeShare", "SSS per pay period"],
+                      ["philhealthEmployeeShare", "PhilHealth per pay period"],
+                      ["pagibigEmployeeShare", "Pag-IBIG per pay period"],
+                    ].map(([key, label]) => (
+                      <label className="manual-contribution-card" key={key}>
+                        <span>{label}</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={form[key]}
+                          onChange={(e) =>
+                            setForm({ ...form, [key]: e.target.value })
+                          }
+                        />
+                      </label>
+                    ))}
+                  </div>
+                )}
+                <div className="contribution-subheading">
+                  <div>
+                    <strong>Other employee contributions</strong>
+                    <small>
+                      These are deducted from take-home pay without changing
+                      the government contribution rates.
+                    </small>
+                  </div>
+                  <button type="button" onClick={() => addItem("contribution")}>
+                    + Add contribution
+                  </button>
+                </div>
+                <div className="contribution-items">
+                  <div className="contribution-item union-dues-item">
+                    <label>
+                      <span>Contribution name</span>
+                      <input value="Union dues" disabled />
+                    </label>
+                    <label>
+                      <span>Calculation</span>
+                      <input value="Fixed amount" disabled />
+                    </label>
+                    <label>
+                      <span>Amount per pay period</span>
+                      <input
+                        aria-label="Union dues per pay period"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={form.unionDues}
+                        onChange={(e) =>
+                          setForm({ ...form, unionDues: e.target.value })
+                        }
+                      />
+                    </label>
+                    <span />
+                  </div>
+                  {form.components.map(
+                    (item, index) =>
+                      item.type === "contribution" && (
+                        <div className="contribution-item" key={index}>
+                          <label>
+                            <span>Contribution name</span>
+                            <input
+                              aria-label="Contribution name"
+                              placeholder="e.g. Cooperative contribution"
+                              value={item.name}
+                              onChange={(e) =>
+                                updateItem(index, "name", e.target.value)
+                              }
+                              required
+                            />
+                          </label>
+                          <label>
+                            <span>Calculation</span>
+                            <select
+                              aria-label="Contribution calculation"
+                              value={item.calculation}
+                              onChange={(e) =>
+                                updateItem(
+                                  index,
+                                  "calculation",
+                                  e.target.value,
+                                )
+                              }
+                            >
+                              <option value="fixed">Fixed amount</option>
+                              <option value="percentage">
+                                Percentage of period base
+                              </option>
+                            </select>
+                          </label>
+                          <label>
+                            <span>
+                              {item.calculation === "percentage"
+                                ? "Percentage"
+                                : "Amount per pay period"}
+                            </span>
+                            <input
+                              aria-label="Contribution amount"
+                              type="number"
+                              min="0"
+                              max={
+                                item.calculation === "percentage"
+                                  ? "100"
+                                  : undefined
+                              }
+                              step="0.01"
+                              value={item.amount}
+                              onChange={(e) =>
+                                updateItem(index, "amount", e.target.value)
+                              }
+                              required
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setForm({
+                                ...form,
+                                components: form.components.filter(
+                                  (_, itemIndex) => itemIndex !== index,
+                                ),
+                              })
+                            }
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ),
+                  )}
+                </div>
+              </fieldset>
+              {["earning", "deduction"].map((type) => (
+                <fieldset key={type}>
+                  <legend>
+                    {type === "earning"
+                      ? "Recurring earnings"
+                      : "Recurring deductions"}
+                  </legend>
+                  {form.components.map(
+                    (item, index) =>
+                      item.type === type && (
+                        <div className="payroll-component" key={index}>
+                          <input
+                            aria-label="Name"
+                            placeholder={
+                              type === "earning"
+                                ? "Allowance name"
+                                : "Deduction name"
+                            }
+                            value={item.name}
+                            onChange={(e) =>
+                              updateItem(index, "name", e.target.value)
+                            }
+                            required
+                          />
+                          <select
+                            aria-label="Calculation"
+                            value={item.calculation}
+                            onChange={(e) =>
+                              updateItem(index, "calculation", e.target.value)
+                            }
+                          >
+                            <option value="fixed">Fixed amount</option>
+                            <option value="percentage">Percentage</option>
+                          </select>
+                          <input
+                            aria-label="Amount"
+                            type="number"
+                            min="0"
+                            max={
+                              item.calculation === "percentage"
+                                ? "100"
+                                : undefined
+                            }
+                            step="0.01"
+                            value={item.amount}
+                            onChange={(e) =>
+                              updateItem(index, "amount", e.target.value)
+                            }
+                            required
+                          />
+                          {type === "earning" && (
+                            <select
+                              aria-label="Statutory benefit category"
+                              value={item.benefitCategory || ""}
+                              onChange={(e) =>
+                                updateItem(
+                                  index,
+                                  "benefitCategory",
+                                  e.target.value,
+                                )
+                              }
+                            >
+                              <option value="">Not a statutory benefit</option>
+                              <option value="rice">Rice subsidy</option>
+                              <option value="uniform">Uniform/clothing</option>
+                              <option value="medical_dependents">
+                                Dependent medical allowance
+                              </option>
+                              <option value="medical_assistance">
+                                Medical assistance
+                              </option>
+                              <option value="laundry">Laundry allowance</option>
+                              <option value="achievement_award">
+                                Achievement award
+                              </option>
+                              <option value="christmas_gifts">
+                                Christmas/anniversary gift
+                              </option>
+                              <option value="cba_productivity">
+                                CBA/productivity incentive
+                              </option>
+                              <option value="overtime_meal">
+                                Overtime meal
+                              </option>
+                              <option value="thirteenth_month">
+                                13th month/other benefits
+                              </option>
+                            </select>
+                          )}
+                          <label className="payroll-check">
+                            <input
+                              type="checkbox"
+                              checked={item.isTaxable}
+                              disabled={Boolean(item.benefitCategory)}
+                              onChange={(e) =>
+                                updateItem(index, "isTaxable", e.target.checked)
+                              }
+                            />
+                            Taxable
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setForm({
+                                ...form,
+                                components: form.components.filter(
+                                  (_, i) => i !== index,
+                                ),
+                              })
+                            }
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ),
+                  )}
+                  <button
+                    className="add-payroll-item"
+                    type="button"
+                    onClick={() => addItem(type)}
+                  >
+                    + Add {type}
+                  </button>
+                </fieldset>
+              ))}
+              <label className="payroll-notes">
+                <span>Notes</span>
+                <textarea
+                  rows="3"
+                  value={form.notes}
+                  onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                  placeholder="Internal payroll notes"
+                />
+              </label>
+            </form>
+          )}
+        </main>
+      </div>
+    </section>
+  );
 }
 
-function payoutPeriodForFrequency(frequency, referenceDate=new Date()){
-  const reference=new Date(referenceDate.getFullYear(),referenceDate.getMonth(),referenceDate.getDate());
-  let end=new Date(reference);end.setDate(end.getDate()-1);
-  let start=new Date(end);
-  if(frequency==='weekly')start.setDate(end.getDate()-6);
-  else if(frequency==='biweekly')start.setDate(end.getDate()-13);
-  else if(frequency==='monthly'){
-    end=new Date(reference.getFullYear(),reference.getMonth(),0);
-    start=new Date(end.getFullYear(),end.getMonth(),1);
-  }else{
-    if(reference.getDate()>15){
-      start=new Date(reference.getFullYear(),reference.getMonth(),1);
-      end=new Date(reference.getFullYear(),reference.getMonth(),15);
-    }else{
-      end=new Date(reference.getFullYear(),reference.getMonth(),0);
-      start=new Date(end.getFullYear(),end.getMonth(),16);
+function payoutPeriodForFrequency(frequency, referenceDate = new Date()) {
+  const reference = new Date(
+    referenceDate.getFullYear(),
+    referenceDate.getMonth(),
+    referenceDate.getDate(),
+  );
+  let end = new Date(reference);
+  end.setDate(end.getDate() - 1);
+  let start = new Date(end);
+  if (frequency === "weekly") start.setDate(end.getDate() - 6);
+  else if (frequency === "biweekly") start.setDate(end.getDate() - 13);
+  else if (frequency === "monthly") {
+    end = new Date(reference.getFullYear(), reference.getMonth(), 0);
+    start = new Date(end.getFullYear(), end.getMonth(), 1);
+  } else {
+    if (reference.getDate() > 15) {
+      start = new Date(reference.getFullYear(), reference.getMonth(), 1);
+      end = new Date(reference.getFullYear(), reference.getMonth(), 15);
+    } else {
+      end = new Date(reference.getFullYear(), reference.getMonth(), 0);
+      start = new Date(end.getFullYear(), end.getMonth(), 16);
     }
   }
-  return{start:localDateValue(start),end:localDateValue(end),payDate:localDateValue(end)};
+  return {
+    start: localDateValue(start),
+    end: localDateValue(end),
+    payDate: localDateValue(end),
+  };
 }
 
 function PayoutView(){

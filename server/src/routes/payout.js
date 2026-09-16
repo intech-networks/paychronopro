@@ -406,7 +406,8 @@ payoutRouter.post(
         value:day.ordinaryWorkPay.additionalPay
       }));
       const earnings = [...recurringEarnings, ...holidayEarnings, ...ordinaryWorkEarnings];
-      const deductions = componentsResult.rows.filter((item) => item.type === 'deduction')
+      const deductions = componentsResult.rows.filter((item) =>
+        item.type === 'deduction' || item.type === 'contribution')
         .map((item) => ({ ...item, value:componentValue(item) }));
       const taxableEarnings = round(earnings.reduce((sum, item) => sum
         + Number(item.taxableValue ?? (item.isTaxable ? item.value : 0)), 0));
