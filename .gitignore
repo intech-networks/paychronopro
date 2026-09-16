@@ -10,3 +10,5 @@ agent/.env
 agent/data/
 sample_employee_accounts.txt
 paytimepro_backup_*.sql
+*.dump
+output/*.sql

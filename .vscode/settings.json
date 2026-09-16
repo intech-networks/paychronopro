@@ -1,4 +1,7 @@
 {
+    "git.enableSmartCommit": false,
+    "git.postCommitCommand": "none",
+    "git.confirmSync": true,
     "chat.tools.terminal.autoApprove": {
         "git remote": true
     }

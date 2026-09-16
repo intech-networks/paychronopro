@@ -10,6 +10,15 @@ the device and sends them to the cloud-hosted PayTimePro application over
 HTTPS. Port 4370 does not need to be exposed to the internet.
 
 
+HOW THE AGENT WORKS
+-------------------
+The agent sends an authenticated heartbeat every 15 seconds by default,
+checks registered MB460 devices, claims pending jobs, and uploads backups.
+The cloud dashboard reads the agent's last heartbeat from the database. It
+shows Online when the last heartbeat is less than 60 seconds old. The dashboard
+does not connect directly to the MB460.
+
+
 PREREQUISITES
 -------------
 1. A Windows computer that remains powered on during synchronization.
@@ -91,6 +100,23 @@ Check the scheduled task from an Administrator PowerShell window:
 
 The task state should normally be Running. LastTaskResult 267009 (0x41301)
 means the long-running task is active.
+
+Inspect the task without displaying the agent secret:
+
+    $task = Get-ScheduledTask -TaskName "PayTimePro Sync Agent"
+    $task | Select-Object TaskName, State, Principal
+    Get-ScheduledTaskInfo -TaskName "PayTimePro Sync Agent" |
+       Select-Object LastRunTime, LastTaskResult, NumberOfMissedRuns, NextRunTime
+
+Confirm the installed configuration keys without printing their values:
+
+    Get-Content "C:\ProgramData\PayTimePro Sync Agent\.env" |
+       Where-Object { $_ -match '^[A-Za-z_]+=' } |
+       ForEach-Object { ($_ -split '=', 2)[0] }
+
+The installed configuration must contain PAYTIMEPRO_API_URL, AGENT_ID,
+AGENT_SECRET, and POLL_INTERVAL_SECONDS. PAYTIMEPRO_API_URL must be the public
+HTTPS site origin. Do not use localhost or include /dashboard.
 
 
 STARTING AND RESTARTING THE AGENT
@@ -189,6 +215,22 @@ Run the installer again from an Administrator PowerShell window:
    .\agent\install-agent.ps1
 
 Do not run the installer from a non-administrator terminal.
+
+
+npm install fails while running patch-node-zklib.js
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Pull the latest repository version before reinstalling. The installer must
+copy agent\scripts because npm ci runs scripts\patch-node-zklib.js as a
+postinstall step:
+
+   Set-Location "C:\Projects\paytimepro"
+   git pull
+   Set-ExecutionPolicy -Scope Process Bypass
+   .\agent\install-agent.ps1
+
+Before running npm ci, verify that the patch script exists:
+
+   Test-Path ".\agent\scripts\patch-node-zklib.js"
 
 
 Run the agent interactively to see errors
